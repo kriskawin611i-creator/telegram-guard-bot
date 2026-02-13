@@ -1,11 +1,23 @@
 import os
 import re
+import threading
 from urllib.parse import urlparse
+
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 10000))
 
+app_web = Flask(__name__)
+
+# ===== เปิดเว็บให้ Render เห็นพอร์ต =====
+@app_web.route("/")
+def home():
+    return "Bot is running!"
+
+# ===== Allowed Domains =====
 ALLOWED_DOMAINS = [
     "t-hoy.com",
     "mangath.live",
@@ -72,23 +84,24 @@ async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     urls = extract_urls(update.message.text)
-    if not urls:
-        return
-
     for url in urls:
         if not is_allowed(url):
             try:
                 await update.message.delete()
-                print(f"Deleted spam link: {url}")
                 return
             except Exception as e:
                 print("Delete failed:", e)
 
-def main():
+def run_bot():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_links))
     print("Bot started...")
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    # รันบอทใน thread แยก
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+
+    # เปิดเว็บให้ Render ตรวจเจอพอร์ต
+    app_web.run(host="0.0.0.0", port=PORT)
