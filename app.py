@@ -1,17 +1,10 @@
 import re
-import asyncio
+import os
 from urllib.parse import urlparse
-import idna
-
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = os.getenv("BOT_TOKEN")
 
 ALLOWED_DOMAINS = [
     "t-hoy.com",
@@ -64,80 +57,34 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# แปลงโดเมนไทยเป็น punycode
-def normalize_domain(domain):
-    try:
-        return idna.encode(domain.strip().lower()).decode()
-    except:
-        return domain.strip().lower()
-
-ALLOWED_DOMAINS_NORMALIZED = [normalize_domain(d) for d in ALLOWED_DOMAINS]
-
-# regex จับ url
 URL_REGEX = re.compile(
-    r"(https?://[^\s]+)|(www\.[^\s]+)",
+    r"(https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+)",
     re.IGNORECASE
 )
 
-def extract_domains(text):
+def extract_domain(url):
+    if not url.startswith("http"):
+        url = "http://" + url
+    parsed = urlparse(url)
+    return parsed.netloc.lower().replace("www.", "")
+
+async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text or update.message.caption
+    if not text:
+        return
+
     urls = URL_REGEX.findall(text)
-    domains = []
 
-    for match in urls:
-        url = match[0] if match[0] else match[1]
-        if not url.startswith("http"):
-            url = "http://" + url
-
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-
-        if domain.startswith("www."):
-            domain = domain[4:]
-
-        domains.append(normalize_domain(domain))
-
-    return domains
-
-
-def is_allowed(domain):
-    for allowed in ALLOWED_DOMAINS_NORMALIZED:
-        if domain == allowed or domain.endswith("." + allowed):
-            return True
-    return False
-
-
-async def filter_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-
-    text = update.message.text
-    domains = extract_domains(text)
-
-    if not domains:
-        return
-
-    for domain in domains:
-        if not is_allowed(domain):
-            try:
-                await update.message.delete()
-            except:
-                pass
-            return
-
+    for url in urls:
+        domain = extract_domain(url)
+        if domain not in ALLOWED_DOMAINS:
+            await update.message.delete()
+            break
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & (~filters.COMMAND),
-            filter_links
-        )
-    )
-
-    print("Bot started...")
+    app.add_handler(MessageHandler(filters.TEXT | filters.CaptionRegex(".*"), check_links))
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
