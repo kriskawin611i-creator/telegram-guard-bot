@@ -1,15 +1,17 @@
-import os
 import re
+import asyncio
 from urllib.parse import urlparse
-from flask import Flask, request
+import idna
+
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-TOKEN = os.environ.get("BOT_TOKEN")
-RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")
-
-app = Flask(__name__)
-application = ApplicationBuilder().token(TOKEN).build()
+TOKEN = "YOUR_BOT_TOKEN"
 
 ALLOWED_DOMAINS = [
     "t-hoy.com",
@@ -62,43 +64,80 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-URL_PATTERN = re.compile(r'(https?://[^\s]+|www\.[^\s]+)')
-
-def is_allowed(url):
+# แปลงโดเมนไทยเป็น punycode
+def normalize_domain(domain):
     try:
-        if not url.startswith("http"):
-            url = "http://" + url
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower().replace("www.", "")
-        return any(domain.endswith(allowed) for allowed in ALLOWED_DOMAINS)
+        return idna.encode(domain.strip().lower()).decode()
     except:
-        return False
+        return domain.strip().lower()
 
-async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.text:
-        urls = URL_PATTERN.findall(update.message.text)
-        for url in urls:
-            if not is_allowed(url):
-                await update.message.delete()
-                break
+ALLOWED_DOMAINS_NORMALIZED = [normalize_domain(d) for d in ALLOWED_DOMAINS]
 
-application.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, check_links)
+# regex จับ url
+URL_REGEX = re.compile(
+    r"(https?://[^\s]+)|(www\.[^\s]+)",
+    re.IGNORECASE
 )
 
-@app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
-    return "ok"
+def extract_domains(text):
+    urls = URL_REGEX.findall(text)
+    domains = []
 
-@app.route("/")
-def home():
-    return "Bot is running"
+    for match in urls:
+        url = match[0] if match[0] else match[1]
+        if not url.startswith("http"):
+            url = "http://" + url
+
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+
+        if domain.startswith("www."):
+            domain = domain[4:]
+
+        domains.append(normalize_domain(domain))
+
+    return domains
+
+
+def is_allowed(domain):
+    for allowed in ALLOWED_DOMAINS_NORMALIZED:
+        if domain == allowed or domain.endswith("." + allowed):
+            return True
+    return False
+
+
+async def filter_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text
+    domains = extract_domains(text)
+
+    if not domains:
+        return
+
+    for domain in domains:
+        if not is_allowed(domain):
+            try:
+                await update.message.delete()
+            except:
+                pass
+            return
+
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & (~filters.COMMAND),
+            filter_links
+        )
+    )
+
+    print("Bot started...")
+    app.run_polling()
+
 
 if __name__ == "__main__":
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
-        webhook_url=f"{RENDER_URL}/{TOKEN}"
-    )
+    main()
