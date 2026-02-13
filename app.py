@@ -1,15 +1,24 @@
 import re
 import os
+import threading
 from urllib.parse import urlparse
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 10000))
+
+app_web = Flask(__name__)
+
+@app_web.route("/")
+def home():
+    return "Bot is running!"
 
 ALLOWED_DOMAINS = [
     "t-hoy.com",
     "mangath.live",
-    "นางแบบ.live",
+    "นางแบบ.live (https://%E0%B8%99%E0%B8%B2%E0%B8%87%E0%B9%81%E0%B8%9A%E0%B8%9A.live)",
     "taluijapan.com",
     "youfilx.com",
     "cc-cos.com",
@@ -23,10 +32,10 @@ ALLOWED_DOMAINS = [
     "zaranua.live",
     "kinnaii.com",
     "mmmoy.com",
-    "ฟิวแฟน.live",
+    "ฟิวแฟน.live (https://%E0%B8%9F%E0%B8%B4%E0%B8%A7%E0%B9%81%E0%B8%9F%E0%B8%99.live)",
     "1000drink.com",
     "ppnewsth.com",
-    "แจกวาร์ป.live",
+    "แจกวาร์ป.live (https://%E0%B9%81%E0%B8%88%E0%B8%81%E0%B8%A7%E0%B8%B2%E0%B8%A3%E0%B9%8C%E0%B8%9B.live)",
     "longsanam.com",
     "toodtidgameth.com",
     "ttphoo.com",
@@ -34,8 +43,8 @@ ALLOWED_DOMAINS = [
     "ockock.com",
     "kongcheer.com",
     "madamporns.com",
-    "โอลี่แฟน.live",
-    "โกดังญี่ปุ่น.com",
+    "โอลี่แฟน.live (https://%E0%B9%82%E0%B8%AD%E0%B8%A5%E0%B8%B5%E0%B9%88%E0%B9%81%E0%B8%9F%E0%B8%99.live)",
+    "โกดังญี่ปุ่น.com (https://%E0%B9%82%E0%B8%81%E0%B8%94%E0%B8%B1%E0%B8%87%E0%B8%8D%E0%B8%B5%E0%B9%88%E0%B8%9B%E0%B8%B8%E0%B9%88%E0%B8%99.com)",
     "stmgamer.com",
     "doofarang.com",
     "fansav.com",
@@ -69,6 +78,9 @@ def extract_domain(url):
     return parsed.netloc.lower().replace("www.", "")
 
 async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
     text = update.message.text or update.message.caption
     if not text:
         return
@@ -81,10 +93,13 @@ async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.delete()
             break
 
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT | filters.CaptionRegex(".*"), check_links))
-    app.run_polling()
+def run_bot():
+    application = ApplicationBuilder().token(TOKEN).build()
+    application.add_handler(
+        MessageHandler(filters.TEXT | filters.CaptionRegex(".*"), check_links)
+    )
+    application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    threading.Thread(target=run_bot).start()
+    app_web.run(host="0.0.0.0", port=PORT)
