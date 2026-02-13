@@ -1,24 +1,27 @@
-import re
 import os
-import threading
+import re
 from urllib.parse import urlparse
-from flask import Flask
+
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
+# ==============================
+# BOT TOKEN
+# ==============================
 TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.environ.get("PORT", 10000))
 
-app_web = Flask(__name__)
-
-@app_web.route("/")
-def home():
-    return "Bot is running!"
-
+# ==============================
+# ALLOWED DOMAINS
+# ==============================
 ALLOWED_DOMAINS = [
     "t-hoy.com",
     "mangath.live",
-    "นางแบบ.live (https://%E0%B8%99%E0%B8%B2%E0%B8%87%E0%B9%81%E0%B8%9A%E0%B8%9A.live)",
+    "นางแบบ.live",
     "taluijapan.com",
     "youfilx.com",
     "cc-cos.com",
@@ -32,10 +35,10 @@ ALLOWED_DOMAINS = [
     "zaranua.live",
     "kinnaii.com",
     "mmmoy.com",
-    "ฟิวแฟน.live (https://%E0%B8%9F%E0%B8%B4%E0%B8%A7%E0%B9%81%E0%B8%9F%E0%B8%99.live)",
+    "ฟิวแฟน.live",
     "1000drink.com",
     "ppnewsth.com",
-    "แจกวาร์ป.live (https://%E0%B9%81%E0%B8%88%E0%B8%81%E0%B8%A7%E0%B8%B2%E0%B8%A3%E0%B9%8C%E0%B8%9B.live)",
+    "แจกวาร์ป.live",
     "longsanam.com",
     "toodtidgameth.com",
     "ttphoo.com",
@@ -43,8 +46,8 @@ ALLOWED_DOMAINS = [
     "ockock.com",
     "kongcheer.com",
     "madamporns.com",
-    "โอลี่แฟน.live (https://%E0%B9%82%E0%B8%AD%E0%B8%A5%E0%B8%B5%E0%B9%88%E0%B9%81%E0%B8%9F%E0%B8%99.live)",
-    "โกดังญี่ปุ่น.com (https://%E0%B9%82%E0%B8%81%E0%B8%94%E0%B8%B1%E0%B8%87%E0%B8%8D%E0%B8%B5%E0%B9%88%E0%B8%9B%E0%B8%B8%E0%B9%88%E0%B8%99.com)",
+    "โอลี่แฟน.live",
+    "โกดังญี่ปุ่น.com",
     "stmgamer.com",
     "doofarang.com",
     "fansav.com",
@@ -66,40 +69,64 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-URL_REGEX = re.compile(
-    r"(https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+)",
-    re.IGNORECASE
-)
+# ==============================
+# FUNCTION ตรวจสอบลิงก์
+# ==============================
+def extract_urls(text):
+    url_pattern = r"(https?://[^\s]+)"
+    return re.findall(url_pattern, text)
 
-def extract_domain(url):
-    if not url.startswith("http"):
-        url = "http://" + url
+
+def is_allowed(url):
     parsed = urlparse(url)
-    return parsed.netloc.lower().replace("www.", "")
+    domain = parsed.netloc.lower()
 
+    # ตัด www.
+    if domain.startswith("www."):
+        domain = domain[4:]
+
+    return domain in ALLOWED_DOMAINS
+
+
+# ==============================
+# HANDLER ลบลิงก์
+# ==============================
 async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
+
+    if not update.message or not update.message.text:
         return
 
-    text = update.message.text or update.message.caption
-    if not text:
-        return
+    urls = extract_urls(update.message.text)
 
-    urls = URL_REGEX.findall(text)
+    if not urls:
+        return
 
     for url in urls:
-        domain = extract_domain(url)
-        if domain not in ALLOWED_DOMAINS:
-            await update.message.delete()
-            break
+        if not is_allowed(url):
+            try:
+                await update.message.delete()
+                print(f"ลบลิงก์สแปม: {url}")
+                return
+            except Exception as e:
+                print("ลบข้อความไม่ได้:", e)
 
-def run_bot():
-    application = ApplicationBuilder().token(TOKEN).build()
-    application.add_handler(
-        MessageHandler(filters.TEXT | filters.CaptionRegex(".*"), check_links)
+
+# ==============================
+# START BOT
+# ==============================
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & (~filters.COMMAND),
+            check_links
+        )
     )
-    application.run_polling()
+
+    print("Bot started...")
+    app.run_polling()
+
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    app_web.run(host="0.0.0.0", port=PORT)
+    main()
