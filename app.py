@@ -1,23 +1,11 @@
 import os
 import re
 from urllib.parse import urlparse
-
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-# ==============================
-# BOT TOKEN
-# ==============================
 TOKEN = os.getenv("BOT_TOKEN")
 
-# ==============================
-# ALLOWED DOMAINS
-# ==============================
 ALLOWED_DOMAINS = [
     "t-hoy.com",
     "mangath.live",
@@ -69,35 +57,21 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# ==============================
-# FUNCTION ตรวจสอบลิงก์
-# ==============================
 def extract_urls(text):
-    url_pattern = r"(https?://[^\s]+)"
-    return re.findall(url_pattern, text)
-
+    return re.findall(r"(https?://[^\s]+)", text)
 
 def is_allowed(url):
     parsed = urlparse(url)
     domain = parsed.netloc.lower()
-
-    # ตัด www.
     if domain.startswith("www."):
         domain = domain[4:]
-
     return domain in ALLOWED_DOMAINS
 
-
-# ==============================
-# HANDLER ลบลิงก์
-# ==============================
 async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not update.message or not update.message.text:
         return
 
     urls = extract_urls(update.message.text)
-
     if not urls:
         return
 
@@ -105,28 +79,16 @@ async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_allowed(url):
             try:
                 await update.message.delete()
-                print(f"ลบลิงก์สแปม: {url}")
+                print(f"Deleted spam link: {url}")
                 return
             except Exception as e:
-                print("ลบข้อความไม่ได้:", e)
+                print("Delete failed:", e)
 
-
-# ==============================
-# START BOT
-# ==============================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & (~filters.COMMAND),
-            check_links
-        )
-    )
-
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_links))
     print("Bot started...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
