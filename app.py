@@ -1,16 +1,11 @@
 import os
 import re
 from urllib.parse import urlparse
-from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
-app = Flask(__name__)
-application = ApplicationBuilder().token(TOKEN).build()
-
-# ✅ อนุญาตเฉพาะโดเมนเหล่านี้
 ALLOWED_DOMAINS = [
     "t-hoy.com",
     "mangath.live",
@@ -62,7 +57,6 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# ตรวจจับ URL
 URL_PATTERN = re.compile(r'(https?://[^\s]+|www\.[^\s]+)')
 
 def is_allowed(url):
@@ -70,40 +64,25 @@ def is_allowed(url):
         if not url.startswith("http"):
             url = "http://" + url
         parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        domain = domain.replace("www.", "")
+        domain = parsed.netloc.lower().replace("www.", "")
         return any(domain.endswith(allowed) for allowed in ALLOWED_DOMAINS)
     except:
         return False
 
 async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.text:
-        text = update.message.text
-        urls = URL_PATTERN.findall(text)
-
+        urls = URL_PATTERN.findall(update.message.text)
         for url in urls:
             if not is_allowed(url):
                 await update.message.delete()
-                print(f"Deleted unauthorized link: {url}")
                 break
 
-application.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, check_links)
-)
-
-@app.route("/")
-def home():
-    return "Bot is running!"
-
-@app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
-    return "ok"
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, check_links)
+    )
+    app.run_polling()
 
 if __name__ == "__main__":
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
-        webhook_url=f"https://YOUR-RENDER-URL.onrender.com/{TOKEN}"
-    )
+    main()
