@@ -1,6 +1,5 @@
 import os
 import re
-import asyncio
 import threading
 from urllib.parse import urlparse
 
@@ -8,15 +7,11 @@ from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-# =============================
-# CONFIG
-# =============================
-
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER (ให้ Render ตรวจเจอพอร์ต)
+# WEB SERVER
 # =============================
 
 app_web = Flask(__name__)
@@ -24,6 +19,9 @@ app_web = Flask(__name__)
 @app_web.route("/")
 def home():
     return "Bot is running!"
+
+def run_web():
+    app_web.run(host="0.0.0.0", port=PORT)
 
 # =============================
 # ALLOWED DOMAINS
@@ -80,10 +78,6 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# =============================
-# URL EXTRACTION
-# =============================
-
 URL_PATTERN = r"(https?://[^\s]+|www\.[^\s]+)"
 
 def extract_urls(text):
@@ -121,13 +115,16 @@ async def check_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print("Delete failed:", e)
 
 # =============================
-# RUN BOT (แก้ event loop สำหรับ thread)
+# MAIN
 # =============================
 
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+if __name__ == "__main__":
 
+    # รัน Flask ใน thread แยก
+    web_thread = threading.Thread(target=run_web)
+    web_thread.start()
+
+    # รัน bot ใน main thread (สำคัญ!)
     application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(
         MessageHandler(filters.TEXT & (~filters.COMMAND), check_links)
@@ -135,16 +132,3 @@ def run_bot():
 
     print("Bot started...")
     application.run_polling()
-
-# =============================
-# MAIN
-# =============================
-
-if __name__ == "__main__":
-
-    # รัน bot ใน thread แยก
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-
-    # เปิด web server ให้ Render เห็นพอร์ต
-    app_web.run(host="0.0.0.0", port=PORT)
