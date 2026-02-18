@@ -121,8 +121,8 @@ ALLOWED_DOMAINS = [
 # =============================
 
 def normalize_text(text):
-    text = unicodedata.normalize("NFKD", text)
-    text = text.encode("ascii", "ignore").decode("ascii")
+    # แก้ฟอนต์แปลก แต่ไม่ลบภาษาไทย
+    text = unicodedata.normalize("NFKC", text)
     return text.lower()
 
 def extract_urls(text):
