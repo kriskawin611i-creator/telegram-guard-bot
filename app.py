@@ -37,13 +37,13 @@ def run_web():
 # =============================
 
 join_times = {}
-user_messages = defaultdict(list)
+spam_tracker = defaultdict(list)
 
 # =============================
 # SETTINGS
 # =============================
 
-SUSPICIOUS_WORDS = [
+BAD_WORDS = [
     "ver video",
     "watch",
     "watch video",
@@ -112,51 +112,46 @@ ALLOWED_DOMAINS = [
 # UTIL
 # =============================
 
-def normalize_text(text):
-    text = unicodedata.normalize("NFKC", text)
-    return text.lower()
+def normalize(text):
+    return unicodedata.normalize("NFKC", text).lower()
 
 def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
-def is_allowed(url):
+def allowed(url):
 
     if not url.startswith("http"):
         url = "http://" + url
 
-    parsed = urlparse(url)
-    domain = parsed.netloc.lower()
+    domain = urlparse(url).netloc.lower()
 
     if domain.startswith("www."):
         domain = domain[4:]
 
     return domain in ALLOWED_DOMAINS
 
+def bad_word(text):
 
-def contains_bad_word(text):
+    text = normalize(text)
 
-    text = normalize_text(text)
-
-    for word in SUSPICIOUS_WORDS:
+    for word in BAD_WORDS:
         if word in text:
             return True
 
     return False
 
-
-def is_spam(user_id):
+def spam(user_id):
 
     now = time.time()
 
-    user_messages[user_id] = [
-        t for t in user_messages[user_id]
+    spam_tracker[user_id] = [
+        t for t in spam_tracker[user_id]
         if now - t < 10
     ]
 
-    user_messages[user_id].append(now)
+    spam_tracker[user_id].append(now)
 
-    return len(user_messages[user_id]) >= 3
-
+    return len(spam_tracker[user_id]) >= 3
 
 # =============================
 # TRACK JOIN
@@ -171,30 +166,24 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN FILTER
 # =============================
 
-async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    message = update.message
-    if not message:
+    msg = update.message
+    if not msg:
         return
 
-    user = message.from_user
+    user = msg.from_user
     chat_id = update.effective_chat.id
-    text = message.text or ""
+    text = msg.text or ""
 
-    # =============================
-    # ADMIN BYPASS
-    # =============================
-
+    # ===== ADMIN BYPASS =====
     member = await context.bot.get_chat_member(chat_id, user.id)
 
-    if getattr(member, "can_delete_messages", False):
+    if member.status in ("administrator", "creator"):
         return
 
-    # =============================
-    # MUTE FUNCTION
-    # =============================
-
-    async def mute_user():
+    # ===== MUTE FUNCTION =====
+    async def mute():
 
         await context.bot.restrict_chat_member(
             chat_id,
@@ -206,66 +195,45 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
         )
 
-    # =============================
-    # BLOCK FORWARD
-    # =============================
-
-    if message.forward_from or message.forward_from_chat:
-        await message.delete()
-        await mute_user()
+    # ===== BLOCK FORWARD =====
+    if msg.forward_from or msg.forward_from_chat:
+        await msg.delete()
+        await mute()
         return
 
-    # =============================
-    # BLOCK MENTION
-    # =============================
-
+    # ===== BLOCK MENTION =====
     if re.search(r"@\w+", text):
-        await message.delete()
-        await mute_user()
+        await msg.delete()
+        await mute()
         return
 
-    # =============================
-    # NEW MEMBER LINK
-    # =============================
-
+    # ===== NEW MEMBER LINK =====
     if user.id in join_times:
-
         if time.time() - join_times[user.id] < 60:
-
             if "http" in text:
-                await message.delete()
-                await mute_user()
+                await msg.delete()
+                await mute()
                 return
 
-    # =============================
-    # LINK FILTER
-    # =============================
-
+    # ===== LINK FILTER =====
     urls = extract_urls(text)
 
-    for url in urls:
-
-        if not is_allowed(url):
-            await message.delete()
-            await mute_user()
+    for u in urls:
+        if not allowed(u):
+            await msg.delete()
+            await mute()
             return
 
-    # =============================
-    # BAD WORD
-    # =============================
-
-    if contains_bad_word(text):
-        await message.delete()
-        await mute_user()
+    # ===== BAD WORD =====
+    if bad_word(text):
+        await msg.delete()
+        await mute()
         return
 
-    # =============================
-    # SPAM
-    # =============================
-
-    if is_spam(user.id):
-        await message.delete()
-        await mute_user()
+    # ===== SPAM =====
+    if spam(user.id):
+        await msg.delete()
+        await mute()
         return
 
 
@@ -278,16 +246,16 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=run_web)
     web_thread.start()
 
-    application = ApplicationBuilder().token(TOKEN).build()
+    bot = ApplicationBuilder().token(TOKEN).build()
 
-    application.add_handler(
+    bot.add_handler(
         ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER)
     )
 
-    application.add_handler(
-        MessageHandler(filters.ALL, check_message)
+    bot.add_handler(
+        MessageHandler(filters.ALL, guard)
     )
 
     print("Bot started")
 
-    application.run_polling()
+    bot.run_polling()
