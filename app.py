@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER
+# WEB SERVER (Render keep alive)
 # =============================
 
 app_web = Flask(__name__)
@@ -65,14 +65,58 @@ LINK_PATTERNS = [
 ]
 
 ALLOWED_DOMAINS = [
-    "gxvdo.com",
     "t-hoy.com",
     "mangath.live",
-    "nangbab.live",
+    "นางแบบ.live",
+    "taluijapan.com",
+    "youfilx.com",
+    "cc-cos.com",
+    "kamouth.com",
+    "gamemonday.live",
+    "catdumb.live",
+    "gaythai.live",
+    "figmodel.com",
+    "hooligril.com",
+    "tidroam.com",
+    "zaranua.live",
+    "kinnaii.com",
+    "mmmoy.com",
+    "ฟิวแฟน.live",
+    "1000drink.com",
+    "ppnewsth.com",
+    "แจกวาร์ป.live",
+    "longsanam.com",
+    "toodtidgameth.com",
+    "ttphoo.com",
+    "larnom.com",
+    "ockock.com",
+    "kongcheer.com",
+    "madamporns.com",
+    "โอลี่แฟน.live",
+    "โกดังญี่ปุ่น.com",
+    "stmgamer.com",
+    "doofarang.com",
+    "fansav.com",
+    "doophuchais.com",
+    "tingkorea.com",
+    "avidol.live",
+    "onlyfanxxx.com",
+    "zapgern.com",
+    "gumpun.com",
+    "madamboys.com",
+    "peekjkt.com",
+    "sudpung.com",
+    "gxvdo.com",
+    "24-jav.ch",
+    "xn--72c9aea1jwd.live",
+    "xn--q3cla5a5dzd.live",
+    "xn--12cn2d5at0e3e4d.live",
+    "xn--q3clr5a4b7dd5c.live",
+    "xn--12cms0a1al5m8a2a6g6cc.com"
 ]
 
 # =============================
-# UTIL
+# UTIL FUNCTIONS
 # =============================
 
 def normalize_text(text):
@@ -133,7 +177,7 @@ def is_spam(user_id):
 
 
 # =============================
-# JOIN TRACK
+# TRACK JOIN TIME
 # =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,7 +204,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text
 
     # =============================
-    # ADMIN BYPASS
+    # ADMIN BYPASS (สำคัญที่สุด)
     # =============================
 
     member = await context.bot.get_chat_member(chat_id, user.id)
@@ -175,10 +219,8 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def mute_user():
 
         await context.bot.restrict_chat_member(
-
             chat_id=chat_id,
             user_id=user.id,
-
             permissions=ChatPermissions(
                 can_send_messages=False,
                 can_send_audios=False,
@@ -190,9 +232,6 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 can_send_polls=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False,
             ),
         )
 
@@ -207,7 +246,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =============================
-    # BLOCK @
+    # BLOCK @ MENTION
     # =============================
 
     if re.search(r"@\w+", text):
@@ -276,7 +315,9 @@ if __name__ == "__main__":
 
     application = ApplicationBuilder().token(TOKEN).build()
 
-    application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(
+        ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER)
+    )
 
     application.add_handler(
         MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
