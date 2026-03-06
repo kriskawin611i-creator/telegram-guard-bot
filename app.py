@@ -7,7 +7,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 from flask import Flask
-from telegram import Update
+from telegram import Update, ChatPermissions
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER (กัน Render sleep)
+# WEB SERVER
 # =============================
 
 app_web = Flask(__name__)
@@ -61,7 +61,6 @@ LINK_PATTERNS = [
     r"http[s]?://",
     r"www\.",
     r"t\.me/",
-    r"@\w+",
     r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online)\b"
 ]
 
@@ -117,11 +116,10 @@ ALLOWED_DOMAINS = [
 ]
 
 # =============================
-# UTIL FUNCTIONS
+# UTIL
 # =============================
 
 def normalize_text(text):
-    # แก้ฟอนต์แปลก แต่ไม่ลบภาษาไทย
     text = unicodedata.normalize("NFKC", text)
     return text.lower()
 
@@ -143,7 +141,7 @@ def is_allowed(url):
 def contains_link(text):
     text = normalize_text(text)
     for pattern in LINK_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
+        if re.search(pattern, text):
             return True
     return False
 
@@ -154,29 +152,32 @@ def contains_suspicious_words(text):
             return True
     return False
 
-def is_spam(user_id, text):
+def is_spam(user_id):
     now = time.time()
+
     user_messages[user_id] = [
         t for t in user_messages[user_id]
-        if now - t[0] < 10
+        if now - t < 10
     ]
-    user_messages[user_id].append((now, text))
+
+    user_messages[user_id].append(now)
+
     return len(user_messages[user_id]) > 3
 
 # =============================
-# TRACK JOIN TIME
+# TRACK JOIN
 # =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.chat_member.new_chat_member.status == "member":
-        user_id = update.chat_member.new_chat_member.user.id
-        join_times[user_id] = time.time()
+        join_times[update.chat_member.new_chat_member.user.id] = time.time()
 
 # =============================
 # MAIN FILTER
 # =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     message = update.message
     if not message or not message.text:
         return
@@ -185,44 +186,61 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = message.text
 
-    # 🔴 บล็อก Forward
+    # ===== ADMIN BYPASS =====
+    member = await context.bot.get_chat_member(chat_id, user.id)
+    if member.status in ["administrator", "creator"]:
+        return
+
+    async def mute_user():
+        await context.bot.restrict_chat_member(
+            chat_id,
+            user.id,
+            permissions=ChatPermissions(
+                can_send_messages=False,
+                can_send_media_messages=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False
+            )
+        )
+
+    # ===== BLOCK FORWARD =====
     if message.forward_from or message.forward_from_chat:
         await message.delete()
-        await context.bot.ban_chat_member(chat_id, user.id)
+        await mute_user()
         return
 
-    # 🔴 บล็อกปุ่ม
-    if message.reply_markup:
+    # ===== BLOCK @MENTION =====
+    if re.search(r"@\w+", text):
         await message.delete()
-        await context.bot.ban_chat_member(chat_id, user.id)
+        await mute_user()
         return
 
-    # 🔴 คนเพิ่งเข้า < 60 วิ แล้วส่งลิงก์
+    # ===== NEW MEMBER LINK =====
     if user.id in join_times:
         if time.time() - join_times[user.id] < 60:
             if contains_link(text):
                 await message.delete()
-                await context.bot.ban_chat_member(chat_id, user.id)
+                await mute_user()
                 return
 
-    # 🔴 ลิงก์ทั่วไป (ไม่อยู่ allow list)
+    # ===== BLOCK NON ALLOWED LINK =====
     urls = extract_urls(text)
     for url in urls:
         if not is_allowed(url):
             await message.delete()
-            await context.bot.ban_chat_member(chat_id, user.id)
+            await mute_user()
             return
 
-    # 🔴 คำต้องสงสัย
+    # ===== BLOCK SUSPICIOUS WORD =====
     if contains_suspicious_words(text):
         await message.delete()
-        await context.bot.ban_chat_member(chat_id, user.id)
+        await mute_user()
         return
 
-    # 🔴 spam flood
-    if is_spam(user.id, text):
+    # ===== SPAM FLOOD =====
+    if is_spam(user.id):
         await message.delete()
-        await context.bot.ban_chat_member(chat_id, user.id)
+        await mute_user()
         return
 
 # =============================
@@ -240,4 +258,5 @@ if __name__ == "__main__":
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_message))
 
     print("Bot started...")
+
     application.run_polling()
