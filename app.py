@@ -20,14 +20,14 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER (Render keep alive)
+# WEB SERVER (keep alive)
 # =============================
 
 app_web = Flask(__name__)
 
 @app_web.route("/")
 def home():
-    return "Bot is running!"
+    return "Bot running"
 
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
@@ -109,7 +109,7 @@ ALLOWED_DOMAINS = [
 ]
 
 # =============================
-# UTIL FUNCTIONS
+# UTIL
 # =============================
 
 def normalize_text(text):
@@ -120,7 +120,6 @@ def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
 def is_allowed(url):
-
     if not url.startswith("http"):
         url = "http://" + url
 
@@ -132,9 +131,7 @@ def is_allowed(url):
 
     return domain in ALLOWED_DOMAINS
 
-
 def contains_bad_word(text):
-
     text = normalize_text(text)
 
     for word in SUSPICIOUS_WORDS:
@@ -142,7 +139,6 @@ def contains_bad_word(text):
             return True
 
     return False
-
 
 def is_spam(user_id):
 
@@ -156,19 +152,6 @@ def is_spam(user_id):
     user_messages[user_id].append(now)
 
     return len(user_messages[user_id]) >= 3
-
-
-# =============================
-# TRACK JOIN TIME
-# =============================
-
-async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.chat_member.new_chat_member.status == "member":
-
-        user_id = update.chat_member.new_chat_member.user.id
-        join_times[user_id] = time.time()
-
 
 # =============================
 # CHECK ADMIN
@@ -184,6 +167,14 @@ async def is_admin(context, chat_id, user_id):
 
     return False
 
+# =============================
+# TRACK JOIN
+# =============================
+
+async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.chat_member.new_chat_member.status == "member":
+        join_times[update.chat_member.new_chat_member.user.id] = time.time()
 
 # =============================
 # MAIN FILTER
@@ -192,7 +183,6 @@ async def is_admin(context, chat_id, user_id):
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
-
     if not message:
         return
 
@@ -200,98 +190,66 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = message.text or ""
 
-    # =============================
-    # ADMIN BYPASS (สำคัญ)
-    # =============================
-
+    # ===== ADMIN BYPASS =====
     if await is_admin(context, chat_id, user.id):
         return
 
-    # =============================
-    # MUTE FUNCTION
-    # =============================
-
+    # ===== MUTE FUNCTION =====
     async def mute_user():
 
         await context.bot.restrict_chat_member(
-            chat_id=chat_id,
-            user_id=user.id,
+            chat_id,
+            user.id,
             permissions=ChatPermissions(
                 can_send_messages=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
-                can_send_polls=False,
             ),
         )
 
-    # =============================
-    # BLOCK FORWARD
-    # =============================
-
+    # ===== BLOCK FORWARD =====
     if message.forward_from or message.forward_from_chat:
-
         await message.delete()
         await mute_user()
         return
 
-    # =============================
-    # BLOCK MENTION
-    # =============================
-
+    # ===== BLOCK MENTION =====
     if re.search(r"@\w+", text):
-
         await message.delete()
         await mute_user()
         return
 
-    # =============================
-    # NEW MEMBER LINK
-    # =============================
-
+    # ===== NEW MEMBER LINK =====
     if user.id in join_times:
 
         if time.time() - join_times[user.id] < 60:
 
             if "http" in text:
-
                 await message.delete()
                 await mute_user()
                 return
 
-    # =============================
-    # LINK FILTER
-    # =============================
-
+    # ===== LINK FILTER =====
     urls = extract_urls(text)
 
     for url in urls:
 
         if not is_allowed(url):
-
             await message.delete()
             await mute_user()
             return
 
-    # =============================
-    # BAD WORD
-    # =============================
-
+    # ===== BAD WORD =====
     if contains_bad_word(text):
-
         await message.delete()
         await mute_user()
         return
 
-    # =============================
-    # SPAM
-    # =============================
-
+    # ===== SPAM =====
     if is_spam(user.id):
-
         await message.delete()
         await mute_user()
         return
-
 
 # =============================
 # MAIN
@@ -312,6 +270,6 @@ if __name__ == "__main__":
         MessageHandler(filters.ALL, check_message)
     )
 
-    print("Bot started...")
+    print("Bot started")
 
     application.run_polling()
