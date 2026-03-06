@@ -19,7 +19,9 @@ from telegram.ext import (
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
-# ---------------- WEB SERVER ----------------
+# =============================
+# WEB SERVER
+# =============================
 
 app_web = Flask(__name__)
 
@@ -30,12 +32,16 @@ def home():
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
-# ---------------- STORAGE ----------------
+# =============================
+# STORAGE
+# =============================
 
 join_times = {}
 user_messages = defaultdict(list)
 
-# ---------------- SETTINGS ----------------
+# =============================
+# SETTINGS
+# =============================
 
 SUSPICIOUS_WORDS = [
     "ver video",
@@ -102,7 +108,9 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# ---------------- UTIL ----------------
+# =============================
+# UTIL
+# =============================
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
@@ -150,14 +158,18 @@ def is_spam(user_id):
     return len(user_messages[user_id]) >= 3
 
 
-# ---------------- TRACK JOIN ----------------
+# =============================
+# TRACK JOIN
+# =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.chat_member.new_chat_member.status == "member":
         join_times[update.chat_member.new_chat_member.user.id] = time.time()
 
-# ---------------- MAIN FILTER ----------------
+# =============================
+# MAIN FILTER
+# =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -169,13 +181,19 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = message.text or ""
 
-    # ===== ADMIN BYPASS =====
+    # =============================
+    # ADMIN BYPASS
+    # =============================
+
     member = await context.bot.get_chat_member(chat_id, user.id)
 
-    if member.status in ("administrator", "creator"):
+    if getattr(member, "can_delete_messages", False):
         return
 
-    # ===== MUTE FUNCTION =====
+    # =============================
+    # MUTE FUNCTION
+    # =============================
+
     async def mute_user():
 
         await context.bot.restrict_chat_member(
@@ -188,19 +206,28 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
         )
 
-    # ===== BLOCK FORWARD =====
+    # =============================
+    # BLOCK FORWARD
+    # =============================
+
     if message.forward_from or message.forward_from_chat:
         await message.delete()
         await mute_user()
         return
 
-    # ===== BLOCK MENTION =====
+    # =============================
+    # BLOCK MENTION
+    # =============================
+
     if re.search(r"@\w+", text):
         await message.delete()
         await mute_user()
         return
 
-    # ===== NEW MEMBER LINK =====
+    # =============================
+    # NEW MEMBER LINK
+    # =============================
+
     if user.id in join_times:
 
         if time.time() - join_times[user.id] < 60:
@@ -210,7 +237,10 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await mute_user()
                 return
 
-    # ===== LINK FILTER =====
+    # =============================
+    # LINK FILTER
+    # =============================
+
     urls = extract_urls(text)
 
     for url in urls:
@@ -220,20 +250,28 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await mute_user()
             return
 
-    # ===== BAD WORD =====
+    # =============================
+    # BAD WORD
+    # =============================
+
     if contains_bad_word(text):
         await message.delete()
         await mute_user()
         return
 
-    # ===== SPAM =====
+    # =============================
+    # SPAM
+    # =============================
+
     if is_spam(user.id):
         await message.delete()
         await mute_user()
         return
 
 
-# ---------------- MAIN ----------------
+# =============================
+# MAIN
+# =============================
 
 if __name__ == "__main__":
 
