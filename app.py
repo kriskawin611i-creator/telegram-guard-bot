@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER
+# WEB SERVER (Render keep alive)
 # =============================
 
 app_web = Flask(__name__)
@@ -109,7 +109,7 @@ ALLOWED_DOMAINS = [
 ]
 
 # =============================
-# UTIL
+# UTIL FUNCTIONS
 # =============================
 
 def normalize_text(text):
@@ -159,7 +159,7 @@ def is_spam(user_id):
 
 
 # =============================
-# TRACK JOIN
+# TRACK JOIN TIME
 # =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,12 +171,28 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =============================
+# CHECK ADMIN
+# =============================
+
+async def is_admin(context, chat_id, user_id):
+
+    admins = await context.bot.get_chat_administrators(chat_id)
+
+    for admin in admins:
+        if admin.user.id == user_id:
+            return True
+
+    return False
+
+
+# =============================
 # MAIN FILTER
 # =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
+
     if not message:
         return
 
@@ -185,12 +201,10 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text or ""
 
     # =============================
-    # ADMIN BYPASS (อยู่บนสุด)
+    # ADMIN BYPASS (สำคัญ)
     # =============================
 
-    member = await context.bot.get_chat_member(chat_id, user.id)
-
-    if member.status in ["administrator", "creator"]:
+    if await is_admin(context, chat_id, user.id):
         return
 
     # =============================
