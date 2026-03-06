@@ -177,7 +177,6 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
-
     if not message:
         return
 
@@ -186,7 +185,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text or ""
 
     # =============================
-    # ADMIN BYPASS
+    # ADMIN BYPASS (อยู่บนสุด)
     # =============================
 
     member = await context.bot.get_chat_member(chat_id, user.id)
