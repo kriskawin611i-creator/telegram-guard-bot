@@ -19,9 +19,7 @@ from telegram.ext import (
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
-# =============================
-# WEB SERVER (keep alive)
-# =============================
+# ---------------- WEB SERVER ----------------
 
 app_web = Flask(__name__)
 
@@ -32,16 +30,12 @@ def home():
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
-# =============================
-# STORAGE
-# =============================
+# ---------------- STORAGE ----------------
 
 join_times = {}
 user_messages = defaultdict(list)
 
-# =============================
-# SETTINGS
-# =============================
+# ---------------- SETTINGS ----------------
 
 SUSPICIOUS_WORDS = [
     "ver video",
@@ -108,9 +102,7 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# =============================
-# UTIL
-# =============================
+# ---------------- UTIL ----------------
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
@@ -120,6 +112,7 @@ def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
 def is_allowed(url):
+
     if not url.startswith("http"):
         url = "http://" + url
 
@@ -131,7 +124,9 @@ def is_allowed(url):
 
     return domain in ALLOWED_DOMAINS
 
+
 def contains_bad_word(text):
+
     text = normalize_text(text)
 
     for word in SUSPICIOUS_WORDS:
@@ -139,6 +134,7 @@ def contains_bad_word(text):
             return True
 
     return False
+
 
 def is_spam(user_id):
 
@@ -153,32 +149,15 @@ def is_spam(user_id):
 
     return len(user_messages[user_id]) >= 3
 
-# =============================
-# CHECK ADMIN
-# =============================
 
-async def is_admin(context, chat_id, user_id):
-
-    admins = await context.bot.get_chat_administrators(chat_id)
-
-    for admin in admins:
-        if admin.user.id == user_id:
-            return True
-
-    return False
-
-# =============================
-# TRACK JOIN
-# =============================
+# ---------------- TRACK JOIN ----------------
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.chat_member.new_chat_member.status == "member":
         join_times[update.chat_member.new_chat_member.user.id] = time.time()
 
-# =============================
-# MAIN FILTER
-# =============================
+# ---------------- MAIN FILTER ----------------
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -191,7 +170,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = message.text or ""
 
     # ===== ADMIN BYPASS =====
-    if await is_admin(context, chat_id, user.id):
+    member = await context.bot.get_chat_member(chat_id, user.id)
+
+    if member.status in ("administrator", "creator"):
         return
 
     # ===== MUTE FUNCTION =====
@@ -251,9 +232,8 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mute_user()
         return
 
-# =============================
-# MAIN
-# =============================
+
+# ---------------- MAIN ----------------
 
 if __name__ == "__main__":
 
