@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER (Render keep alive)
+# WEB SERVER
 # =============================
 
 app_web = Flask(__name__)
@@ -55,13 +55,6 @@ SUSPICIOUS_WORDS = [
     "ฟรี",
     "หีเด็ก",
     "คลิกปุ่ม",
-]
-
-LINK_PATTERNS = [
-    r"http[s]?://",
-    r"www\.",
-    r"t\.me/",
-    r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online)\b"
 ]
 
 ALLOWED_DOMAINS = [
@@ -112,11 +105,11 @@ ALLOWED_DOMAINS = [
     "xn--q3cla5a5dzd.live",
     "xn--12cn2d5at0e3e4d.live",
     "xn--q3clr5a4b7dd5c.live",
-    "xn--12cms0a1al5m8a2a6g6cc.com"
+    "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
 # =============================
-# UTIL FUNCTIONS
+# UTIL
 # =============================
 
 def normalize_text(text):
@@ -138,17 +131,6 @@ def is_allowed(url):
         domain = domain[4:]
 
     return domain in ALLOWED_DOMAINS
-
-
-def contains_link(text):
-
-    text = normalize_text(text)
-
-    for pattern in LINK_PATTERNS:
-        if re.search(pattern, text):
-            return True
-
-    return False
 
 
 def contains_bad_word(text):
@@ -177,7 +159,7 @@ def is_spam(user_id):
 
 
 # =============================
-# TRACK JOIN TIME
+# TRACK JOIN
 # =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,15 +178,15 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
 
-    if not message or not message.text:
+    if not message:
         return
 
     user = message.from_user
     chat_id = update.effective_chat.id
-    text = message.text
+    text = message.text or ""
 
     # =============================
-    # ADMIN BYPASS (สำคัญที่สุด)
+    # ADMIN BYPASS
     # =============================
 
     member = await context.bot.get_chat_member(chat_id, user.id)
@@ -223,15 +205,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id=user.id,
             permissions=ChatPermissions(
                 can_send_messages=False,
-                can_send_audios=False,
-                can_send_documents=False,
-                can_send_photos=False,
-                can_send_videos=False,
-                can_send_video_notes=False,
-                can_send_voice_notes=False,
-                can_send_polls=False,
                 can_send_other_messages=False,
                 can_add_web_page_previews=False,
+                can_send_polls=False,
             ),
         )
 
@@ -246,7 +222,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =============================
-    # BLOCK @ MENTION
+    # BLOCK MENTION
     # =============================
 
     if re.search(r"@\w+", text):
@@ -263,7 +239,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if time.time() - join_times[user.id] < 60:
 
-            if contains_link(text):
+            if "http" in text:
 
                 await message.delete()
                 await mute_user()
@@ -294,7 +270,7 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # =============================
-    # SPAM FLOOD
+    # SPAM
     # =============================
 
     if is_spam(user.id):
@@ -320,7 +296,7 @@ if __name__ == "__main__":
     )
 
     application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
+        MessageHandler(filters.ALL, check_message)
     )
 
     print("Bot started...")
