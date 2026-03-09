@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER
+# WEB SERVER (FOR RENDER)
 # =============================
 
 app_web = Flask(__name__)
@@ -32,12 +32,14 @@ def home():
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
+
 # =============================
 # STORAGE
 # =============================
 
 join_times = {}
 user_messages = defaultdict(list)
+
 
 # =============================
 # SETTINGS
@@ -124,8 +126,10 @@ def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
     return text.lower()
 
+
 def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
+
 
 def is_allowed(url):
 
@@ -197,12 +201,23 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
 
-    if not message or not message.text:
+    if not message:
+        return
+
+    # =============================
+    # BYPASS CHANNEL / ANON ADMIN
+    # =============================
+
+    if message.sender_chat:
         return
 
     user = message.from_user
+
+    if not user:
+        return
+
     chat_id = update.effective_chat.id
-    text = message.text
+    text = message.text or ""
 
     # =============================
     # ADMIN BYPASS
@@ -220,24 +235,10 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def mute_user():
 
         await context.bot.restrict_chat_member(
-
             chat_id=chat_id,
             user_id=user.id,
-
             permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_audios=False,
-                can_send_documents=False,
-                can_send_photos=False,
-                can_send_videos=False,
-                can_send_video_notes=False,
-                can_send_voice_notes=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False,
+                can_send_messages=False
             ),
         )
 
@@ -324,7 +325,7 @@ if __name__ == "__main__":
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
 
     application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
+        MessageHandler(filters.ALL & (~filters.COMMAND), check_message)
     )
 
     print("Bot started...")
