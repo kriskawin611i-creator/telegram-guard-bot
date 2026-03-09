@@ -40,7 +40,7 @@ join_times = {}
 user_messages = defaultdict(list)
 
 # =============================
-# ALERT SYSTEM (เพิ่มใหม่)
+# ALERT SYSTEM
 # =============================
 
 async def alert_action(context, chat_id, user, reason, action):
@@ -268,8 +268,6 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 can_pin_messages=False,
             ),
         )
-
-        await alert_action(context, chat_id, user, "ส่งข้อความสแปม", "MUTE")
 
     # =============================
     # BLOCK FORWARD
