@@ -20,7 +20,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
 # =============================
-# WEB SERVER (FOR RENDER)
+# WEB SERVER
 # =============================
 
 app_web = Flask(__name__)
@@ -32,7 +32,6 @@ def home():
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
-
 # =============================
 # STORAGE
 # =============================
@@ -40,6 +39,33 @@ def run_web():
 join_times = {}
 user_messages = defaultdict(list)
 
+# =============================
+# ALERT SYSTEM (เพิ่มใหม่)
+# =============================
+
+async def alert_action(context, chat_id, user, reason, action):
+
+    try:
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"""
+🚫 GUARD BOT
+
+ตรวจพบการกระทำต้องสงสัย
+
+ผู้ใช้: {user.mention_html()}
+เหตุผล: {reason}
+
+การดำเนินการ: {action}
+
+ระบบป้องกันกลุ่มทำงานอัตโนมัติ
+""",
+            parse_mode="HTML"
+        )
+
+    except:
+        pass
 
 # =============================
 # SETTINGS
@@ -126,10 +152,8 @@ def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
     return text.lower()
 
-
 def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
-
 
 def is_allowed(url):
 
@@ -201,23 +225,12 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
 
-    if not message:
-        return
-
-    # =============================
-    # BYPASS CHANNEL / ANON ADMIN
-    # =============================
-
-    if message.sender_chat:
+    if not message or not message.text:
         return
 
     user = message.from_user
-
-    if not user:
-        return
-
     chat_id = update.effective_chat.id
-    text = message.text or ""
+    text = message.text
 
     # =============================
     # ADMIN BYPASS
@@ -235,12 +248,28 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async def mute_user():
 
         await context.bot.restrict_chat_member(
+
             chat_id=chat_id,
             user_id=user.id,
+
             permissions=ChatPermissions(
-                can_send_messages=False
+                can_send_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
             ),
         )
+
+        await alert_action(context, chat_id, user, "ส่งข้อความสแปม", "MUTE")
 
     # =============================
     # BLOCK FORWARD
@@ -249,6 +278,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message.forward_from or message.forward_from_chat:
 
         await message.delete()
+
+        await alert_action(context, chat_id, user, "Forward ข้อความ", "DELETE + MUTE")
+
         await mute_user()
         return
 
@@ -259,6 +291,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if re.search(r"@\w+", text):
 
         await message.delete()
+
+        await alert_action(context, chat_id, user, "ส่ง @username", "DELETE + MUTE")
+
         await mute_user()
         return
 
@@ -273,6 +308,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if contains_link(text):
 
                 await message.delete()
+
+                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", "DELETE + MUTE")
+
                 await mute_user()
                 return
 
@@ -287,6 +325,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_allowed(url):
 
             await message.delete()
+
+            await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", "DELETE + MUTE")
+
             await mute_user()
             return
 
@@ -297,6 +338,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if contains_bad_word(text):
 
         await message.delete()
+
+        await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", "DELETE + MUTE")
+
         await mute_user()
         return
 
@@ -307,6 +351,9 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_spam(user.id):
 
         await message.delete()
+
+        await alert_action(context, chat_id, user, "Spam ข้อความ", "DELETE + MUTE")
+
         await mute_user()
         return
 
@@ -325,7 +372,7 @@ if __name__ == "__main__":
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
 
     application.add_handler(
-        MessageHandler(filters.ALL & (~filters.COMMAND), check_message)
+        MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
     )
 
     print("Bot started...")
