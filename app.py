@@ -16,45 +16,57 @@ from telegram.ext import (
     ChatMemberHandler,
 )
 
+# ==============================
+# CONFIG
+# ==============================
+
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
-# =============================
-# WEB SERVER
-# =============================
+MUTE_DURATION = None  # None = ถาวร
+
+# ==============================
+# WEB SERVER (กัน Render sleep)
+# ==============================
 
 app_web = Flask(__name__)
 
 @app_web.route("/")
 def home():
-    return "Bot running"
+    return "Guard Bot is running!"
 
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
-# =============================
+# ==============================
 # STORAGE
-# =============================
+# ==============================
 
 join_times = {}
-spam_tracker = defaultdict(list)
+user_messages = defaultdict(list)
 
-# =============================
+# ==============================
 # SETTINGS
-# =============================
+# ==============================
 
-BAD_WORDS = [
-    "ver video",
-    "watch",
+SUSPICIOUS_WORDS = [
     "watch video",
+    "ver video",
     "ดูฟรี",
     "free",
-    "เด็กนักเรียน",
     "เด็ก",
     "นักเรียน",
     "ฟรี",
     "หีเด็ก",
     "คลิกปุ่ม",
+]
+
+LINK_PATTERNS = [
+    r"http[s]?://",
+    r"www\.",
+    r"t\.me/",
+    r"telegram\.me/",
+    r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online|me|cc|io|app|shop)\b"
 ]
 
 ALLOWED_DOMAINS = [
@@ -108,154 +120,259 @@ ALLOWED_DOMAINS = [
     "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# =============================
-# UTIL
-# =============================
+# ==============================
+# UTIL FUNCTIONS
+# ==============================
 
-def normalize(text):
-    return unicodedata.normalize("NFKC", text).lower()
+def normalize_text(text):
+    text = unicodedata.normalize("NFKC", text)
+    text = text.replace("\u200b", "")
+    text = text.replace("\u200c", "")
+    text = text.replace("\u200d", "")
+    return text.lower()
 
 def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
-def allowed(url):
+def is_allowed(url):
 
     if not url.startswith("http"):
         url = "http://" + url
 
-    domain = urlparse(url).netloc.lower()
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower()
 
     if domain.startswith("www."):
         domain = domain[4:]
 
     return domain in ALLOWED_DOMAINS
 
-def bad_word(text):
+def contains_link(text):
 
-    text = normalize(text)
+    text = normalize_text(text)
 
-    for word in BAD_WORDS:
+    for pattern in LINK_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+
+    return False
+
+def contains_suspicious_words(text):
+
+    text = normalize_text(text)
+
+    for word in SUSPICIOUS_WORDS:
         if word in text:
             return True
 
     return False
 
-def spam(user_id):
+def is_spam(user_id, text):
 
     now = time.time()
 
-    spam_tracker[user_id] = [
-        t for t in spam_tracker[user_id]
-        if now - t < 10
+    user_messages[user_id] = [
+        t for t in user_messages[user_id]
+        if now - t[0] < 10
     ]
 
-    spam_tracker[user_id].append(now)
+    user_messages[user_id].append((now, text))
 
-    return len(spam_tracker[user_id]) >= 3
+    return len(user_messages[user_id]) > 5
 
-# =============================
+def emoji_count(text):
+    return len(re.findall(r"[^\w\s,]", text))
+
+def mention_count(text):
+    return len(re.findall(r"@\w+", text))
+
+# ==============================
+# ADMIN CHECK
+# ==============================
+
+async def is_admin(update, context):
+
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    member = await context.bot.get_chat_member(chat_id, user_id)
+
+    return member.status in ["administrator", "creator"]
+
+# ==============================
+# MUTE USER
+# ==============================
+
+async def mute_user(chat_id, user_id, context):
+
+    permissions = ChatPermissions(
+        can_send_messages=False,
+        can_send_media_messages=False,
+        can_send_polls=False,
+        can_send_other_messages=False,
+        can_add_web_page_previews=False,
+        can_invite_users=False,
+        can_pin_messages=False,
+    )
+
+    await context.bot.restrict_chat_member(
+        chat_id,
+        user_id,
+        permissions,
+        until_date=MUTE_DURATION
+    )
+
+# ==============================
 # TRACK JOIN
-# =============================
+# ==============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.chat_member.new_chat_member.status == "member":
-        join_times[update.chat_member.new_chat_member.user.id] = time.time()
 
-# =============================
+        user_id = update.chat_member.new_chat_member.user.id
+        join_times[user_id] = time.time()
+
+# ==============================
 # MAIN FILTER
-# =============================
+# ==============================
 
-async def guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    msg = update.message
-    if not msg:
+    message = update.message
+
+    if not message:
         return
 
-    user = msg.from_user
+    user = message.from_user
     chat_id = update.effective_chat.id
-    text = msg.text or ""
 
-    # ===== ADMIN BYPASS =====
-    member = await context.bot.get_chat_member(chat_id, user.id)
-
-    if member.status in ("administrator", "creator"):
+    if await is_admin(update, context):
         return
 
-    # ===== MUTE FUNCTION =====
-    async def mute():
+    text = message.text or message.caption or ""
 
-        await context.bot.restrict_chat_member(
-            chat_id,
-            user.id,
-            permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-            ),
-        )
+    # ==========================
+    # LINK FILTER
+    # ==========================
 
-    # ===== BLOCK FORWARD =====
-    if msg.forward_from or msg.forward_from_chat:
-        await msg.delete()
-        await mute()
-        return
+    if contains_link(text):
 
-    # ===== BLOCK MENTION =====
-    if re.search(r"@\w+", text):
-        await msg.delete()
-        await mute()
-        return
+        urls = extract_urls(text)
 
-    # ===== NEW MEMBER LINK =====
-    if user.id in join_times:
-        if time.time() - join_times[user.id] < 60:
-            if "http" in text:
-                await msg.delete()
-                await mute()
+        for url in urls:
+
+            if not is_allowed(url):
+
+                await message.delete()
+
+                await mute_user(chat_id, user.id, context)
+
+                await context.bot.send_message(
+                    chat_id,
+                    f"🚫 ระบบป้องกันสแปม\n\n"
+                    f"ผู้ใช้: @{user.username or user.id}\n"
+                    f"ตรวจพบ: ลิงก์ต้องห้าม\n\n"
+                    f"ระบบได้ดำเนินการ:\n"
+                    f"ลบข้อความ + mute ถาวร"
+                )
+
                 return
 
-    # ===== LINK FILTER =====
-    urls = extract_urls(text)
+    # ==========================
+    # SUSPICIOUS WORD
+    # ==========================
 
-    for u in urls:
-        if not allowed(u):
-            await msg.delete()
-            await mute()
-            return
+    if contains_suspicious_words(text):
 
-    # ===== BAD WORD =====
-    if bad_word(text):
-        await msg.delete()
-        await mute()
+        await message.delete()
+
+        await mute_user(chat_id, user.id, context)
+
+        await context.bot.send_message(
+            chat_id,
+            f"🚫 ระบบป้องกันสแปม\n\n"
+            f"ผู้ใช้: @{user.username or user.id}\n"
+            f"ตรวจพบ: คำต้องสงสัย\n\n"
+            f"ระบบได้ mute ถาวร"
+        )
+
         return
 
-    # ===== SPAM =====
-    if spam(user.id):
-        await msg.delete()
-        await mute()
+    # ==========================
+    # EMOJI FLOOD
+    # ==========================
+
+    if emoji_count(text) > 15:
+
+        await message.delete()
+
+        await mute_user(chat_id, user.id, context)
+
+        await context.bot.send_message(
+            chat_id,
+            f"⚠️ ตรวจพบ Emoji Spam\n"
+            f"ผู้ใช้ @{user.username or user.id} ถูก mute"
+        )
+
         return
 
+    # ==========================
+    # MENTION SPAM
+    # ==========================
 
-# =============================
+    if mention_count(text) > 5:
+
+        await message.delete()
+
+        await mute_user(chat_id, user.id, context)
+
+        await context.bot.send_message(
+            chat_id,
+            f"⚠️ Mention Spam\n"
+            f"ผู้ใช้ @{user.username or user.id} ถูก mute"
+        )
+
+        return
+
+    # ==========================
+    # FLOOD SPAM
+    # ==========================
+
+    if is_spam(user.id, text):
+
+        await message.delete()
+
+        await mute_user(chat_id, user.id, context)
+
+        await context.bot.send_message(
+            chat_id,
+            f"⚠️ Spam Message\n"
+            f"ผู้ใช้ @{user.username or user.id} ถูก mute"
+        )
+
+        return
+
+# ==============================
 # MAIN
-# =============================
+# ==============================
 
 if __name__ == "__main__":
 
     web_thread = threading.Thread(target=run_web)
     web_thread.start()
 
-    bot = ApplicationBuilder().token(TOKEN).build()
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    bot.add_handler(
-        ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER)
+    application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
+
+    application.add_handler(
+        MessageHandler(
+            filters.ALL & (~filters.COMMAND),
+            check_message
+        )
     )
 
-    bot.add_handler(
-        MessageHandler(filters.ALL, guard)
-    )
+    print("🔥 Guard Bot Started")
 
-    print("Bot started")
-
-    bot.run_polling()
+    application.run_polling()
