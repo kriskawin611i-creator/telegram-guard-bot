@@ -16,70 +16,81 @@ from telegram.ext import (
     ChatMemberHandler,
 )
 
-# =====================================
-# TOKEN
-# =====================================
-
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
 
-# =====================================
-# WEB SERVER (KEEP BOT ALIVE)
-# =====================================
+# =============================
+# WEB SERVER
+# =============================
 
 app_web = Flask(__name__)
 
 @app_web.route("/")
 def home():
-    return "Guard Bot Running"
+    return "Bot is running!"
 
 def run_web():
     app_web.run(host="0.0.0.0", port=PORT)
 
-# =====================================
+# =============================
 # STORAGE
-# =====================================
+# =============================
 
 join_times = {}
 user_messages = defaultdict(list)
-last_messages = {}
 
-# =====================================
+# =============================
+# ALERT SYSTEM
+# =============================
+
+async def alert_action(context, chat_id, user, reason, action):
+
+    try:
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"""
+🚫 GUARD BOT
+
+ตรวจพบการกระทำต้องสงสัย
+
+ผู้ใช้: {user.mention_html()}
+เหตุผล: {reason}
+
+การดำเนินการ: {action}
+
+ระบบป้องกันกลุ่มทำงานอัตโนมัติ
+""",
+            parse_mode="HTML"
+        )
+
+    except:
+        pass
+
+# =============================
 # SETTINGS
-# =====================================
+# =============================
 
 SUSPICIOUS_WORDS = [
-
-    "เด็กน้อย",
-    "เดกน้อย",
-    "เปิดคลิป",
-    "เปิดคลิปเลย",
-    "คลิกดู",
-    "ดูคลิป",
-    "คลิปหลุด",
-    "ดูฟรี",
-    "ฟรี",
-    "18+",
-    "xxx",
-    "porn",
-    "sex",
+    "ver video",
     "watch",
     "watch video",
-    "free video",
+    "ดูฟรี",
+    "free",
+    "เด็กนักเรียน",
+    "เด็ก",
+    "นักเรียน",
+    "ฟรี",
+    "หีเด็ก",
+    "คลิกปุ่ม",
 ]
 
 LINK_PATTERNS = [
-
     r"http[s]?://",
-    r"www\\.",
-    r"t\\.me/",
-    r"@\\w+",
-    r"bit\\.ly",
-    r"tinyurl",
-    r"t\\.co",
-    r"goo\\.gl",
-    r"shorturl",
-    r"\\b[a-zA-Z0-9-]+\\.(com|net|org|xyz|top|club|site|vip|online)\\b",
+    r"www\.",
+    r"t\.me/",
+    r"@\w+",
+    r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online)\b"
 ]
 
 ALLOWED_DOMAINS = [
@@ -126,22 +137,23 @@ ALLOWED_DOMAINS = [
     "sudpung.com",
     "gxvdo.com",
     "24-jav.ch",
+    "xn--72c9aea1jwd.live",
+    "xn--q3cla5a5dzd.live",
+    "xn--12cn2d5at0e3e4d.live",
+    "xn--q3clr5a4b7dd5c.live",
+    "xn--12cms0a1al5m8a2a6g6cc.com",
 ]
 
-# =====================================
-# UTIL FUNCTIONS
-# =====================================
+# =============================
+# UTIL
+# =============================
 
 def normalize_text(text):
-
     text = unicodedata.normalize("NFKC", text)
     return text.lower()
 
-
 def extract_urls(text):
-
-    return re.findall(r"(https?://[^\\s]+|www\\.[^\\s]+)", text)
-
+    return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
 def is_allowed(url):
 
@@ -149,7 +161,6 @@ def is_allowed(url):
         url = "http://" + url
 
     parsed = urlparse(url)
-
     domain = parsed.netloc.lower()
 
     if domain.startswith("www."):
@@ -163,9 +174,7 @@ def contains_link(text):
     text = normalize_text(text)
 
     for pattern in LINK_PATTERNS:
-
         if re.search(pattern, text):
-
             return True
 
     return False
@@ -176,9 +185,7 @@ def contains_bad_word(text):
     text = normalize_text(text)
 
     for word in SUSPICIOUS_WORDS:
-
         if word in text:
-
             return True
 
     return False
@@ -197,79 +204,46 @@ def is_spam(user_id):
 
     return len(user_messages[user_id]) >= 3
 
-# =====================================
-# ALERT
-# =====================================
 
-async def alert_action(context, chat_id, user, reason, action):
-
-    try:
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"""
-🚫 GUARD BOT
-
-ตรวจพบการกระทำต้องสงสัย
-
-ผู้ใช้: {user.mention_html()}
-เหตุผล: {reason}
-
-การดำเนินการ: {action}
-
-ระบบป้องกันกลุ่มทำงานอัตโนมัติ
-""",
-            parse_mode="HTML"
-        )
-
-    except:
-        pass
-
-# =====================================
+# =============================
 # JOIN TRACK
-# =====================================
+# =============================
 
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.chat_member.new_chat_member.status == "member":
 
         user_id = update.chat_member.new_chat_member.user.id
-
         join_times[user_id] = time.time()
 
-# =====================================
+
+# =============================
 # MAIN FILTER
-# =====================================
+# =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
 
-    if not message:
+    if not message or not message.text:
         return
 
     user = message.from_user
     chat_id = update.effective_chat.id
+    text = message.text
 
-    text = message.text or ""
+    # =============================
+    # ADMIN BYPASS
+    # =============================
 
-    # =====================================
-    # ADMIN BYPASS (ADMIN + OWNER POST ANYTHING)
-    # =====================================
+    member = await context.bot.get_chat_member(chat_id, user.id)
 
-    try:
-
-        member = await context.bot.get_chat_member(chat_id, user.id)
-
-        if member.status in ["administrator", "creator"]:
-            return
-
-    except:
+    if member.status in ["administrator", "creator"]:
         return
 
-    # =====================================
+    # =============================
     # MUTE FUNCTION
-    # =====================================
+    # =============================
 
     async def mute_user():
 
@@ -295,63 +269,35 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
         )
 
-    # =====================================
+    # =============================
     # BLOCK FORWARD
-    # =====================================
+    # =============================
 
     if message.forward_from or message.forward_from_chat:
 
         await message.delete()
 
-        await alert_action(context, chat_id, user, "Forward Spam", "DELETE + MUTE")
+        await alert_action(context, chat_id, user, "Forward ข้อความ", "DELETE + MUTE")
 
         await mute_user()
-
         return
 
-    # =====================================
-    # INLINE BUTTON SPAM
-    # =====================================
+    # =============================
+    # BLOCK @
+    # =============================
 
-    if message.reply_markup:
-
-        try:
-
-            buttons = message.reply_markup.inline_keyboard
-
-            for row in buttons:
-                for button in row:
-
-                    if button.url:
-
-                        await message.delete()
-
-                        await alert_action(context, chat_id, user, "Inline Button Spam", "DELETE + MUTE")
-
-                        await mute_user()
-
-                        return
-
-        except:
-            pass
-
-    # =====================================
-    # USERNAME SPAM
-    # =====================================
-
-    if re.search(r"@\\w+", text):
+    if re.search(r"@\w+", text):
 
         await message.delete()
 
-        await alert_action(context, chat_id, user, "Username Spam", "DELETE + MUTE")
+        await alert_action(context, chat_id, user, "ส่ง @username", "DELETE + MUTE")
 
         await mute_user()
-
         return
 
-    # =====================================
+    # =============================
     # NEW MEMBER LINK
-    # =====================================
+    # =============================
 
     if user.id in join_times:
 
@@ -361,15 +307,14 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await message.delete()
 
-                await alert_action(context, chat_id, user, "New Member Link", "DELETE + MUTE")
+                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", "DELETE + MUTE")
 
                 await mute_user()
-
                 return
 
-    # =====================================
+    # =============================
     # LINK FILTER
-    # =====================================
+    # =============================
 
     urls = extract_urls(text)
 
@@ -379,82 +324,45 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await message.delete()
 
-            await alert_action(context, chat_id, user, "Unauthorized Link", "DELETE + MUTE")
+            await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", "DELETE + MUTE")
 
             await mute_user()
-
             return
 
-    # =====================================
-    # BAD WORD FILTER
-    # =====================================
+    # =============================
+    # BAD WORD
+    # =============================
 
     if contains_bad_word(text):
 
         await message.delete()
 
-        await alert_action(context, chat_id, user, "Suspicious Word", "DELETE + MUTE")
+        await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", "DELETE + MUTE")
 
         await mute_user()
-
         return
 
-    # =====================================
-    # EMOJI PORN SPAM
-    # =====================================
-
-    emoji_pattern = r"[👅💦🔞🍑🍒🔥]"
-
-    if len(re.findall(emoji_pattern, text)) >= 3:
-
-        await message.delete()
-
-        await alert_action(context, chat_id, user, "Emoji Spam", "DELETE + MUTE")
-
-        await mute_user()
-
-        return
-
-    # =====================================
-    # DUPLICATE MESSAGE
-    # =====================================
-
-    key = (user.id, text)
-
-    if key in last_messages:
-
-        await message.delete()
-
-        await alert_action(context, chat_id, user, "Duplicate Spam", "DELETE + MUTE")
-
-        await mute_user()
-
-        return
-
-    last_messages[key] = time.time()
-
-    # =====================================
-    # FLOOD SPAM
-    # =====================================
+    # =============================
+    # SPAM FLOOD
+    # =============================
 
     if is_spam(user.id):
 
         await message.delete()
 
-        await alert_action(context, chat_id, user, "Message Flood", "DELETE + MUTE")
+        await alert_action(context, chat_id, user, "Spam ข้อความ", "DELETE + MUTE")
 
         await mute_user()
-
         return
 
-# =====================================
+
+# =============================
 # MAIN
-# =====================================
+# =============================
 
 if __name__ == "__main__":
 
     web_thread = threading.Thread(target=run_web)
-
     web_thread.start()
 
     application = ApplicationBuilder().token(TOKEN).build()
@@ -462,9 +370,9 @@ if __name__ == "__main__":
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
 
     application.add_handler(
-        MessageHandler(filters.ALL & (~filters.COMMAND), check_message)
+        MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
     )
 
-    print("Guard Bot Started")
+    print("Bot started...")
 
     application.run_polling()
