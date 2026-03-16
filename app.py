@@ -225,21 +225,56 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = update.message
 
-    if not message or not message.text:
+    if not message:
         return
 
     user = message.from_user
     chat_id = update.effective_chat.id
-    text = message.text
 
-    # =============================
-    # ADMIN BYPASS
-    # =============================
-
-    member = await context.bot.get_chat_member(chat_id, user.id)
-
-    if member.status in ["administrator", "creator"]:
+    if not user:
         return
+
+    # =================================================
+    # HARD ADMIN BYPASS (ADMIN ทำได้ทุกอย่าง 100%)
+    # =================================================
+
+    try:
+
+        member = await context.bot.get_chat_member(chat_id, user.id)
+
+        if member.status in ["administrator", "creator"]:
+
+            # ปลด mute ถ้าเคยโดน
+            try:
+                await context.bot.restrict_chat_member(
+                    chat_id,
+                    user.id,
+                    permissions=ChatPermissions(
+                        can_send_messages=True,
+                        can_send_audios=True,
+                        can_send_documents=True,
+                        can_send_photos=True,
+                        can_send_videos=True,
+                        can_send_video_notes=True,
+                        can_send_voice_notes=True,
+                        can_send_polls=True,
+                        can_send_other_messages=True,
+                        can_add_web_page_previews=True,
+                        can_change_info=True,
+                        can_invite_users=True,
+                        can_pin_messages=True,
+                    ),
+                )
+            except:
+                pass
+
+            # ADMIN ไม่ต้องตรวจอะไรเลย
+            return
+
+    except:
+        pass
+
+    text = message.text or message.caption or ""
 
     # =============================
     # MUTE FUNCTION
@@ -370,7 +405,7 @@ if __name__ == "__main__":
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
 
     application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), check_message)
+        MessageHandler(filters.ALL, check_message)
     )
 
     print("Bot started...")
