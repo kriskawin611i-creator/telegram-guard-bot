@@ -47,6 +47,11 @@ async def alert_action(context, chat_id, user, reason, action):
 
     try:
 
+        name = "Unknown"
+
+        if user:
+            name = user.mention_html()
+
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"""
@@ -54,7 +59,7 @@ async def alert_action(context, chat_id, user, reason, action):
 
 ตรวจพบการกระทำต้องสงสัย
 
-ผู้ใช้: {user.mention_html()}
+ผู้ใช้: {name}
 เหตุผล: {reason}
 
 การดำเนินการ: {action}
@@ -228,15 +233,23 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message:
         return
 
-    user = message.from_user
     chat_id = update.effective_chat.id
+
+    # ==================================================
+    # BYPASS POST AS GROUP / CHANNEL / ANONYMOUS ADMIN
+    # ==================================================
+
+    if message.sender_chat:
+        return
+
+    user = message.from_user
 
     if not user:
         return
 
-    # =================================================
-    # HARD ADMIN BYPASS (ADMIN ทำได้ทุกอย่าง 100%)
-    # =================================================
+    # ==================================================
+    # HARD ADMIN BYPASS
+    # ==================================================
 
     try:
 
@@ -244,7 +257,6 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if member.status in ["administrator", "creator"]:
 
-            # ปลด mute ถ้าเคยโดน
             try:
                 await context.bot.restrict_chat_member(
                     chat_id,
@@ -268,7 +280,6 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-            # ADMIN ไม่ต้องตรวจอะไรเลย
             return
 
     except:
