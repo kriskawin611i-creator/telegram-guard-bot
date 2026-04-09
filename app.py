@@ -77,17 +77,43 @@ async def alert_action(context, chat_id, user, reason, action):
 # =============================
 
 SUSPICIOUS_WORDS = [
-    "ver video",
-    "watch",
-    "watch video",
-    "ดูฟรี",
-    "free",
-    "เด็กนักเรียน",
-    "เด็ก",
-    "นักเรียน",
-    "ฟรี",
-    "หีเด็ก",
-    "คลิกปุ่ม",
+
+# 🔞 18+
+"เย็ด","ควย","หี","แตกใน","น้ำแตก","เงี่ยน","เสียว","เอากัน",
+"porn","xxx","nsfw","18plus","หนังโป๊",
+
+# 📸 leak
+"หลุด","คลิปหลุด","onlyfans","fansly","leak","leaked",
+
+# 👙 ล่อแหลม
+"นม","หุ่นดี","สาวเด็ด","เซ็กซี่","ยั่ว",
+
+# 🔗 CTA / หลอกคลิก
+"ดูฟรี","ดูเลย","กดดู","คลิกที่นี่","ลิงก์นี้",
+"รับชม","เข้าดู","ดูต่อ",
+"watch video","full clip","full video",
+
+# ⚠️ เด็ก
+"มัธยม","นักเรียน","เด็กนักเรียน","เด็กมัธยม","ใสๆ","เดก",
+
+# 🎰 พนัน
+"สล็อต","บาคาร่า","แทงบอล","ไม่ต้องฝาก",
+"ลงทุน","กำไร","ได้เงินจริง","ทำเงิน","ถอนเงิน",
+"โบนัส","โปรแรง","โปรแจก",
+
+# 💬 ขาย / ปิดการขาย
+"แอดไลน์","line","dm","inbox","สนใจ",
+"ขายจริง","รับงาน","รับทำ","ติดต่อ","หาร",
+
+# 🎭 escort
+"ไซด์ไลน์","งานเอ็น","escort","เด็กเอ็น","งานนอก","private",
+
+# 🔗 link / domain
+"http","https","www",".com",".xyz",".vip",".top",".site",
+"t.me","telegram","bit.ly","tinyurl","shorturl",
+
+# 🤖 spam trick
+"คลังเก็บ","auto","gift"
 ]
 
 LINK_PATTERNS = [
@@ -96,6 +122,45 @@ LINK_PATTERNS = [
     r"t\.me/",
     r"@\w+",
     r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online)\b"
+]
+
+# =============================
+# ADD SMART NORMALIZE
+# =============================
+def smart_normalize(text):
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r'[\u200b-\u200f\uFEFF]', '', text)
+    text = re.sub(r'[^\w\s]', '', text)
+    return text.lower()
+
+# =============================
+# FIX contains_bad_word
+# =============================
+def contains_bad_word(text):
+
+    text = smart_normalize(text)
+
+    patterns = [
+        r"ค[\W_]*ว[\W_]*ย",
+        r"เ[\W_]*ย[\W_]*็[\W_]*ด",
+        r"p[\W_]*o[\W_]*r[\W_]*n",
+    ]
+
+    for p in patterns:
+        if re.search(p, text):
+            return True
+
+    for word in SUSPICIOUS_WORDS:
+        if word in text:
+            return True
+
+    return False
+
+SUSPICIOUS_EMOJIS = [
+"🔥","💦","😍","🥵","💋","👉","👌","🍑","🍆",
+"🔞","📌","🎯","💯","⭐","❤️","💖","💥",
+"👅","😈","🤤","🆓","🎁","📲","📥","📍",
+"❗","‼️","🔗"
 ]
 
 ALLOWED_DOMAINS = [
@@ -160,6 +225,9 @@ def normalize_text(text):
 def extract_urls(text):
     return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
 
+# =============================
+# FIX DOMAIN CHECK
+# =============================
 def is_allowed(url):
 
     if not url.startswith("http"):
@@ -171,8 +239,11 @@ def is_allowed(url):
     if domain.startswith("www."):
         domain = domain[4:]
 
-    return domain in ALLOWED_DOMAINS
+    for d in ALLOWED_DOMAINS:
+        if domain == d or domain.endswith("." + d):
+            return True
 
+    return False
 
 def contains_link(text):
 
@@ -183,18 +254,6 @@ def contains_link(text):
             return True
 
     return False
-
-
-def contains_bad_word(text):
-
-    text = normalize_text(text)
-
-    for word in SUSPICIOUS_WORDS:
-        if word in text:
-            return True
-
-    return False
-
 
 def is_spam(user_id):
 
@@ -223,183 +282,110 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =============================
-# MAIN FILTER
+# MAIN FILTER (ปิดระบบเก่า)
 # =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return
 
-    message = update.message
 
-    if not message:
+# =============================
+# GOD MODE ADD
+# =============================
+
+user_verified = {}
+pending_verify = set()
+user_score = defaultdict(int)
+
+async def enhanced_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.chat_member.new_chat_member.status == "member":
+
+        user = update.chat_member.new_chat_member.user
+        uid = user.id
+        chat_id = update.chat_member.chat.id
+
+        pending_verify.add(uid)
+
+        await context.bot.restrict_chat_member(
+            chat_id,
+            uid,
+            ChatPermissions(can_send_messages=False)
+        )
+
+        await context.bot.send_message(chat_id,
+            "👋 พิมพ์ 'ยืนยัน' และรอ 5 นาที ก่อนพิมพ์")
+
+async def verify_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    msg = update.message
+    if not msg:
+        return
+
+    user = msg.from_user
+
+    if user.id in pending_verify and msg.text and "ยืนยัน" in msg.text:
+
+        pending_verify.remove(user.id)
+        user_verified[user.id] = time.time()
+
+        await msg.reply_text("✅ ยืนยันแล้ว")
+
+def is_locked(uid):
+    return uid not in user_verified or time.time() - user_verified[uid] < 300
+
+async def god_mode_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    msg = update.message
+    if not msg:
+        return
+
+    user = msg.from_user
+    if not user:
         return
 
     chat_id = update.effective_chat.id
 
-    # ==================================================
-    # BYPASS POST AS GROUP / CHANNEL / ANONYMOUS ADMIN
-    # ==================================================
-
-    if message.sender_chat:
-        return
-
-    user = message.from_user
-
-    if not user:
-        return
-
-    # ==================================================
-    # HARD ADMIN BYPASS
-    # ==================================================
-
+    # ADMIN BYPASS
     try:
-
         member = await context.bot.get_chat_member(chat_id, user.id)
-
         if member.status in ["administrator", "creator"]:
-
-            try:
-                await context.bot.restrict_chat_member(
-                    chat_id,
-                    user.id,
-                    permissions=ChatPermissions(
-                        can_send_messages=True,
-                        can_send_audios=True,
-                        can_send_documents=True,
-                        can_send_photos=True,
-                        can_send_videos=True,
-                        can_send_video_notes=True,
-                        can_send_voice_notes=True,
-                        can_send_polls=True,
-                        can_send_other_messages=True,
-                        can_add_web_page_previews=True,
-                        can_change_info=True,
-                        can_invite_users=True,
-                        can_pin_messages=True,
-                    ),
-                )
-            except:
-                pass
-
             return
-
     except:
         pass
 
-    text = message.text or message.caption or ""
+    uid = user.id
+    text = msg.text or msg.caption or ""
 
-    # =============================
-    # MUTE FUNCTION
-    # =============================
-
-    async def mute_user():
-
-        await context.bot.restrict_chat_member(
-
-            chat_id=chat_id,
-            user_id=user.id,
-
-            permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_audios=False,
-                can_send_documents=False,
-                can_send_photos=False,
-                can_send_videos=False,
-                can_send_video_notes=False,
-                can_send_voice_notes=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False,
-            ),
-        )
-
-    # =============================
-    # BLOCK FORWARD
-    # =============================
-
-    if message.forward_from or message.forward_from_chat:
-
-        await message.delete()
-
-        await alert_action(context, chat_id, user, "Forward ข้อความ", "DELETE + MUTE")
-
-        await mute_user()
+    if uid in pending_verify or is_locked(uid):
+        await msg.delete()
         return
 
-    # =============================
-    # BLOCK @
-    # =============================
-
-    if re.search(r"@\w+", text):
-
-        await message.delete()
-
-        await alert_action(context, chat_id, user, "ส่ง @username", "DELETE + MUTE")
-
-        await mute_user()
+    if msg.forward_from or msg.forward_from_chat or msg.forward_sender_name:
+        await msg.delete()
+        await context.bot.restrict_chat_member(chat_id, uid, ChatPermissions(can_send_messages=False))
         return
 
-    # =============================
-    # NEW MEMBER LINK
-    # =============================
-
-    if user.id in join_times:
-
-        if time.time() - join_times[user.id] < 60:
-
-            if contains_link(text):
-
-                await message.delete()
-
-                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", "DELETE + MUTE")
-
-                await mute_user()
-                return
-
-    # =============================
-    # LINK FILTER
-    # =============================
-
-    urls = extract_urls(text)
-
-    for url in urls:
-
-        if not is_allowed(url):
-
-            await message.delete()
-
-            await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", "DELETE + MUTE")
-
-            await mute_user()
-            return
-
-    # =============================
-    # BAD WORD
-    # =============================
+    score = 0
 
     if contains_bad_word(text):
+        score += 3
 
-        await message.delete()
+    urls = extract_urls(text)
+    for url in urls:
+        if not is_allowed(url):
+            score += 5
 
-        await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", "DELETE + MUTE")
+    user_score[uid] += score
 
-        await mute_user()
-        return
+    if user_score[uid] >= 5:
+        await msg.delete()
 
-    # =============================
-    # SPAM FLOOD
-    # =============================
+    if user_score[uid] >= 8:
+        await context.bot.restrict_chat_member(chat_id, uid, ChatPermissions(can_send_messages=False))
 
-    if is_spam(user.id):
-
-        await message.delete()
-
-        await alert_action(context, chat_id, user, "Spam ข้อความ", "DELETE + MUTE")
-
-        await mute_user()
-        return
+    if user_score[uid] >= 12:
+        await context.bot.ban_chat_member(chat_id, uid)
 
 
 # =============================
@@ -414,11 +400,13 @@ if __name__ == "__main__":
     application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(MessageHandler(filters.ALL, check_message))
 
-    application.add_handler(
-        MessageHandler(filters.ALL, check_message)
-    )
+    application.add_handler(ChatMemberHandler(enhanced_join, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(MessageHandler(filters.TEXT, verify_user))
+    application.add_handler(MessageHandler(filters.ALL, god_mode_filter))
 
-    print("Bot started...")
+    print("BOT RUNNING (FINAL FIXED)")
 
     application.run_polling()
+    
