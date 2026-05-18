@@ -511,12 +511,20 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    if not message or not user or not chat:
+    if not message or not chat:
         return
 
-    logger.info(f"/purge received in chat {chat.id} reply={bool(message.reply_to_message)}")
+    sender_chat = getattr(message, "sender_chat", None)
+    sender_chat_is_group = bool(sender_chat and sender_chat.id == chat.id)
 
-    if not await is_admin_cached(context, chat.id, user.id):
+    logger.info(
+        f"/purge received in chat {chat.id} "
+        f"user={getattr(user, 'id', None)} "
+        f"sender_chat={getattr(sender_chat, 'id', None)} "
+        f"reply={bool(message.reply_to_message)}"
+    )
+
+    if not sender_chat_is_group and (not user or not await is_admin_cached(context, chat.id, user.id)):
         await message.reply_text("คำสั่งนี้ใช้ได้เฉพาะ admin")
         return
 
