@@ -48,6 +48,10 @@ _semaphore: asyncio.Semaphore | None = None  # สร้างใน event loop 
 USER_COOLDOWN       = 0.3   # วินาที
 user_last_processed: dict[int, float] = {}
 
+# ถ้าบอทเพิ่งตื่นหลังล่ม Render จะส่ง pending updates เข้ามารัวมาก
+# ข้อความที่เก่ากว่านี้จะถือเป็น backlog และไม่โดน per-user cooldown ข้าม
+BACKLOG_MESSAGE_AGE = 30    # วินาที
+
 # [STABILITY #3] Alert dedup — ถ้า user ถูก alert ไปแล้วใน 60 วินาที → ไม่ alert ซ้ำ
 # กัน bot ส่ง alert ท่วม group เวลาโดน spam หนัก
 ALERT_COOLDOWN      = 60    # วินาที
@@ -253,6 +257,12 @@ def is_spam(user_id: int) -> bool:
     user_messages[user_id].append(now)
     return len(user_messages[user_id]) >= 5
 
+def is_backlog_message(message) -> bool:
+    msg_date = getattr(message, "date", None)
+    if not msg_date:
+        return False
+    return time.time() - msg_date.timestamp() > BACKLOG_MESSAGE_AGE
+
 # =============================
 # DETECT FORWARD / STORY / GIFT
 # =============================
@@ -312,11 +322,13 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         return
 
+    backlog = is_backlog_message(message)
+
     # [STABILITY #2] Per-user cooldown — fast path ก่อน semaphore
     # ถ้า user ส่งถี่เกิน 0.3 วินาที ตรวจสอบว่าอยู่ใน muted หรือเปล่า
     now  = time.time()
     last = user_last_processed.get(user.id, 0)
-    if now - last < USER_COOLDOWN:
+    if not backlog and now - last < USER_COOLDOWN:
         # ถ้าถูก mute ถาวรแล้ว → ลบทันทีโดยไม่รอ semaphore
         if user.id in user_muted_permanent:
             try:
@@ -525,5 +537,5 @@ if __name__ == "__main__":
 
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,   # [STABILITY] ทิ้ง update ที่ค้างอยู่ตอน bot restart
+        drop_pending_updates=False,  # ประมวลผล update ที่ค้างอยู่ตอน bot restart เพื่อไล่ลบสแปมย้อนหลัง
     )
