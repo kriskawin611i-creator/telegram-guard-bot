@@ -329,6 +329,11 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
 
+    command_text = message.text or ""
+    if re.match(r"^/purge(?:@\w+)?(?:\s|$)", command_text, re.IGNORECASE):
+        await purge_command(update, context)
+        return
+
     if message.sender_chat:
         return
 
@@ -506,10 +511,28 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     chat = update.effective_chat
 
-    if not message or not admin or not chat:
+    if not message or not chat:
+        return
+
+    logger.info(
+        f"/purge received in chat {chat.id} "
+        f"from_user={getattr(admin, 'id', None)} "
+        f"sender_chat={getattr(getattr(message, 'sender_chat', None), 'id', None)} "
+        f"reply={bool(message.reply_to_message)}"
+    )
+
+    if not admin:
+        try:
+            await message.reply_text("ใช้ /purge ด้วยบัญชี admin ปกติ ไม่ใช่โหมด anonymous/channel")
+        except Exception:
+            pass
         return
 
     if not await is_admin_cached(context, chat.id, admin.id):
+        try:
+            await message.reply_text("คำสั่งนี้ใช้ได้เฉพาะ admin")
+        except Exception:
+            pass
         return
 
     target_message = message.reply_to_message
@@ -531,6 +554,7 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id=target.id,
             revoke_messages=True,
         )
+        logger.info(f"/purge ban/revoke OK for user {target.id} in chat {chat.id}")
         try:
             await message.delete()
         except Exception:
