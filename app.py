@@ -91,6 +91,91 @@ def run_web():
 join_times    : dict[int, float]       = {}
 user_messages : dict[int, list[float]] = defaultdict(list)
 
+# [PURGE FIX] เก็บ message_id รายคน เพื่อให้ /purge ลบโพสต์ทั้งหมดของ user ย้อนหลังได้
+# key = (chat_id, user_id) -> list[(message_id, timestamp)]
+# revoke_messages ของ Telegram ลบได้แค่ 48 ชม.ล่าสุด และไม่การันตีว่าลบจริง
+# จึงต้องเก็บ id เองแล้วสั่ง delete ตรงๆ
+user_message_log: dict[tuple[int, int], list[tuple[int, float]]] = defaultdict(list)
+
+MESSAGE_DELETABLE_AGE    = 48 * 3600   # บอทลบข้อความเก่ากว่า 48 ชม.ไม่ได้ (ลิมิต Telegram)
+MESSAGE_LOG_MAX_PER_USER = 300         # เก็บ id ล่าสุดสูงสุด 300 ตัว/คน กัน memory leak
+_record_counter          = 0          # ตัวนับสำหรับ trigger cleanup เป็นระยะ
+
+
+def record_message(chat_id: int, user_id: int, message_id: int) -> None:
+    """บันทึก message_id ของ user ไว้สำหรับ /purge — พร้อม prune ของเก่าและ cap จำนวน"""
+    global _record_counter
+    now = time.time()
+    log = user_message_log[(chat_id, user_id)]
+    log.append((message_id, now))
+
+    # prune ข้อความที่เกิน 48 ชม. (ลบไม่ได้อยู่แล้ว) + จำกัดจำนวน
+    cutoff = now - MESSAGE_DELETABLE_AGE
+    log[:] = [e for e in log if e[1] > cutoff][-MESSAGE_LOG_MAX_PER_USER:]
+
+    _record_counter += 1
+    if _record_counter >= 500:
+        _record_counter = 0
+        cleanup_message_log()
+
+
+def cleanup_message_log() -> None:
+    """ลบ key ที่ข้อความหมดอายุทั้งหมดแล้ว กัน dict โตไม่จำกัด"""
+    now    = time.time()
+    cutoff = now - MESSAGE_DELETABLE_AGE
+    dead   = []
+    for key, log in list(user_message_log.items()):
+        log[:] = [e for e in log if e[1] > cutoff]
+        if not log:
+            dead.append(key)
+    for key in dead:
+        user_message_log.pop(key, None)
+
+
+async def purge_user_messages(context, chat_id: int, user_id: int,
+                              extra_ids: list[int] | None = None) -> int:
+    """
+    ลบโพสต์ทั้งหมดของ user คนนี้ในกลุ่ม (ที่ยังอยู่ในกรอบ 48 ชม.)
+    คืนค่าจำนวนข้อความที่ลบสำเร็จ
+    """
+    now = time.time()
+    log = user_message_log.get((chat_id, user_id), [])
+
+    ids: set[int] = set(extra_ids or [])     # ข้อความที่ admin reply → รวมไว้เสมอ
+    for mid, t in log:
+        if now - t < MESSAGE_DELETABLE_AGE:  # เกิน 48 ชม. ลบไม่ได้ ข้ามไป
+            ids.add(mid)
+
+    # เคลียร์ log ของ user คนนี้ทิ้ง (โดนแบนแล้ว ไม่ต้องเก็บต่อ)
+    user_message_log.pop((chat_id, user_id), None)
+
+    if not ids:
+        return 0
+
+    ids_list = sorted(ids)
+    deleted  = 0
+
+    # ลบทีละชุด 100 ตัว (delete_messages = bulk API ของ Telegram)
+    for i in range(0, len(ids_list), 100):
+        chunk = ids_list[i:i + 100]
+        try:
+            await context.bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+            deleted += len(chunk)
+        except Exception as e:
+            # fallback: ลบทีละข้อความ (เผื่อ PTB เก่าไม่มี delete_messages
+            # หรือบางข้อความเกิน 48 ชม. / ลบไปแล้ว)
+            logger.warning(f"bulk delete failed in chat {chat_id}: {e} — fallback per-message")
+            for mid in chunk:
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+                    deleted += 1
+                except Exception:
+                    pass
+
+    logger.info(f"purge_user_messages: deleted {deleted}/{len(ids_list)} msgs "
+                f"for user {user_id} in chat {chat_id}")
+    return deleted
+
 # =============================
 # ADMIN CACHE
 # =============================
@@ -341,6 +426,10 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         return
 
+    # [PURGE FIX] บันทึก message_id ของ user ไว้ก่อน เผื่อ admin สั่ง /purge ภายหลัง
+    # ทำก่อน cooldown เพื่อให้เก็บ id ของพวก flood ได้ครบ แม้ข้อความนั้นจะถูกข้ามการตรวจ
+    record_message(chat_id, user.id, message.message_id)
+
     backlog = is_backlog_message(message)
 
     # [STABILITY #2] Per-user cooldown — fast path ก่อน semaphore
@@ -388,9 +477,12 @@ async def _process_message(message, user, chat_id: int, context):
                         user_id=user.id,
                         revoke_messages=True,
                     )
+                    # [PURGE FIX] ลบโพสต์ทั้งหมดของสแปมเมอร์ที่ตรวจเจอ
+                    # (revoke_messages ตอน ban ไม่การันตีว่าลบจริง จึงลบเองด้วย)
+                    await purge_user_messages(context, chat_id, user.id)
                     return
                 except Exception as e:
-                    logger.warning(f"ban/revoke failed for user {user.id} in chat {chat_id}: {e}")
+                    logger.warning(f"ban failed for user {user.id} in chat {chat_id}: {e}")
 
             try:
                 await context.bot.restrict_chat_member(
@@ -541,53 +633,57 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_muted_permanent.add(target.id)
     save_muted()
 
+    # ——— 1) Ban + revoke (เป็น pass แรกแบบฟรี — แต่ไม่พึ่งมันลบจริง) ———
+    ban_ok = False
     try:
+        # revoke_messages=True — ให้ Telegram ช่วยลบอีกชั้น (เราจะลบทั้งหมดอยู่แล้ว)
         await context.bot.ban_chat_member(
             chat_id=chat.id,
             user_id=target.id,
             revoke_messages=True,
         )
-        logger.info(f"/purge ban/revoke OK for user {target.id} in chat {chat.id}")
+        ban_ok = True
+        logger.info(f"/purge ban OK for user {target.id} in chat {chat.id}")
+    except Exception as e:
+        logger.warning(f"/purge ban failed for user {target.id} in chat {chat.id}: {e}")
+        # ban ไม่ผ่าน → fallback restrict (mute) แทน
         try:
-            await message.delete()
-        except Exception:
-            pass
-        await alert_action(
-            context,
-            chat.id,
-            target,
-            "Admin ใช้ /purge เพื่อล้างสแปมย้อนหลัง",
-            "🚫 BAN + ลบข้อความทั้งหมดของ user",
-        )
-        return
-    except Exception as e:
-        logger.warning(f"/purge ban/revoke failed for user {target.id} in chat {chat.id}: {e}")
+            await context.bot.restrict_chat_member(
+                chat_id=chat.id,
+                user_id=target.id,
+                permissions=ChatPermissions(can_send_messages=False),
+            )
+        except Exception as e2:
+            logger.warning(f"/purge fallback restrict failed for user {target.id}: {e2}")
 
-    try:
-        await target_message.delete()
-    except Exception:
-        pass
+    # ——— 2) ลบโพสต์ทั้งหมดของ user คนนี้ย้อนหลัง ———
+    # reply โพสต์เดียว → ลบทุกโพสต์ของ user คนนั้น (ที่อยู่ในกรอบ 48 ชม.)
+    deleted = await purge_user_messages(
+        context, chat.id, target.id,
+        extra_ids=[target_message.message_id],   # โพสต์ที่ admin reply → รวมไว้เสมอ
+    )
 
-    try:
-        await context.bot.restrict_chat_member(
-            chat_id=chat.id,
-            user_id=target.id,
-            permissions=ChatPermissions(can_send_messages=False),
-        )
-    except Exception as e:
-        logger.warning(f"/purge fallback restrict failed for user {target.id} in chat {chat.id}: {e}")
-
+    # ลบคำสั่ง /purge ของ admin
     try:
         await message.delete()
     except Exception:
         pass
 
+    # ——— 3) รายงานผล ———
+    if deleted > 0:
+        action_text = f"🚫 BAN + ลบโพสต์ทั้งหมด {deleted} ข้อความ"
+    elif ban_ok:
+        action_text = ("🚫 BAN สำเร็จ — แต่ลบข้อความไม่ได้ "
+                       "(อาจเก่ากว่า 48 ชม. หรือถูกลบไปแล้ว)")
+    else:
+        action_text = "⚠️ ลบ/แบนไม่สำเร็จ — ตรวจสิทธิ์ Delete Messages ของบอท"
+
     await alert_action(
         context,
         chat.id,
         target,
-        "Admin ใช้ /purge แต่ล้างประวัติไม่สำเร็จ จึงลบข้อความที่ reply และ mute แทน",
-        "🔇 DELETE + MUTE ถาวร",
+        "Admin ใช้ /purge เพื่อล้างสแปมย้อนหลัง",
+        action_text,
     )
 
 
