@@ -14,6 +14,7 @@ from telegram import Update, ChatPermissions
 from telegram.error import RetryAfter, TimedOut, NetworkError, Forbidden
 from telegram.ext import (
     ApplicationBuilder,
+    CommandHandler,
     MessageHandler,
     ContextTypes,
     filters,
@@ -56,6 +57,15 @@ BACKLOG_MESSAGE_AGE = 30    # วินาที
 # กัน bot ส่ง alert ท่วม group เวลาโดน spam หนัก
 ALERT_COOLDOWN      = 60    # วินาที
 user_last_alert: dict[int, float] = {}
+
+# เมื่อตรวจเจอสแปมเมอร์ ให้ ban พร้อมสั่ง Telegram ลบประวัติข้อความของ user คนนั้น
+# ถ้า Telegram ไม่อนุญาตหรือ bot สิทธิ์ไม่พอ จะ fallback เป็น mute ถาวรแบบเดิม
+PURGE_SPAMMER_HISTORY_ON_DETECT = True
+AUTO_ACTION_TEXT = (
+    "🚫 DELETE + BAN + ลบประวัติ"
+    if PURGE_SPAMMER_HISTORY_ON_DETECT
+    else "🔇 DELETE + MUTE ถาวร"
+)
 
 # =============================
 # WEB SERVER  (สำหรับ UptimeRobot)
@@ -226,7 +236,11 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFKC", text).lower()
 
 def extract_urls(text: str) -> list:
-    return re.findall(r"(https?://[^\s]+|www\.[^\s]+)", text)
+    text = normalize_text(text)
+    return re.findall(
+        r"(https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)",
+        text,
+    )
 
 def is_allowed(url: str) -> bool:
     if not url.startswith("http"):
@@ -362,6 +376,17 @@ async def _process_message(message, user, chat_id: int, context):
         async def mute_permanent():
             user_muted_permanent.add(user.id)
             save_muted()
+            if PURGE_SPAMMER_HISTORY_ON_DETECT:
+                try:
+                    await context.bot.ban_chat_member(
+                        chat_id=chat_id,
+                        user_id=user.id,
+                        revoke_messages=True,
+                    )
+                    return
+                except Exception as e:
+                    logger.warning(f"ban/revoke failed for user {user.id} in chat {chat_id}: {e}")
+
             try:
                 await context.bot.restrict_chat_member(
                     chat_id=chat_id,
@@ -397,7 +422,7 @@ async def _process_message(message, user, chat_id: int, context):
         if is_any_forward(message):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "Forward ข้อความ (ทุกรูปแบบ)", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "Forward ข้อความ (ทุกรูปแบบ)", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -405,7 +430,7 @@ async def _process_message(message, user, chat_id: int, context):
         if is_story_share(message):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "แชร์ Story", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "แชร์ Story", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -413,7 +438,7 @@ async def _process_message(message, user, chat_id: int, context):
         if is_gift_message(message):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "ส่ง Gift / NFT / Collectible", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "ส่ง Gift / NFT / Collectible", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -421,7 +446,7 @@ async def _process_message(message, user, chat_id: int, context):
         if re.search(r"@\w+", text):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "ส่ง @username", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "ส่ง @username", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -430,7 +455,7 @@ async def _process_message(message, user, chat_id: int, context):
             if contains_link(text):
                 try: await message.delete()
                 except Exception: pass
-                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", "🔇 DELETE + MUTE ถาวร")
+                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", AUTO_ACTION_TEXT)
                 await mute_permanent()
                 return
 
@@ -439,7 +464,7 @@ async def _process_message(message, user, chat_id: int, context):
             if not is_allowed(url):
                 try: await message.delete()
                 except Exception: pass
-                await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", "🔇 DELETE + MUTE ถาวร")
+                await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", AUTO_ACTION_TEXT)
                 await mute_permanent()
                 return
 
@@ -447,7 +472,7 @@ async def _process_message(message, user, chat_id: int, context):
         if contains_bad_word(text):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -455,7 +480,7 @@ async def _process_message(message, user, chat_id: int, context):
         if contains_suspicious_emoji(text):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, f"ส่ง Emoji ต้องสงสัย ≥ {EMOJI_THRESHOLD} ตัว", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, f"ส่ง Emoji ต้องสงสัย ≥ {EMOJI_THRESHOLD} ตัว", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
@@ -463,13 +488,90 @@ async def _process_message(message, user, chat_id: int, context):
         if is_spam(user.id):
             try: await message.delete()
             except Exception: pass
-            await alert_action(context, chat_id, user, "Spam ข้อความ", "🔇 DELETE + MUTE ถาวร")
+            await alert_action(context, chat_id, user, "Spam ข้อความ", AUTO_ACTION_TEXT)
             await mute_permanent()
             return
 
     except Exception as e:
         # [STABILITY] จับทุก exception ไม่ให้ตายเงียบๆ
         logger.error(f"check_message error for user {user.id} in chat {chat_id}: {e}")
+
+
+# =============================
+# ADMIN COMMANDS
+# =============================
+
+async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    admin = update.effective_user
+    chat = update.effective_chat
+
+    if not message or not admin or not chat:
+        return
+
+    if not await is_admin_cached(context, chat.id, admin.id):
+        return
+
+    target_message = message.reply_to_message
+    if not target_message or not target_message.from_user:
+        await message.reply_text("ใช้ /purge โดย reply ข้อความสแปมที่ต้องการล้าง")
+        return
+
+    target = target_message.from_user
+    if await is_admin_cached(context, chat.id, target.id):
+        await message.reply_text("ไม่ล้างข้อความของ admin")
+        return
+
+    user_muted_permanent.add(target.id)
+    save_muted()
+
+    try:
+        await context.bot.ban_chat_member(
+            chat_id=chat.id,
+            user_id=target.id,
+            revoke_messages=True,
+        )
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await alert_action(
+            context,
+            chat.id,
+            target,
+            "Admin ใช้ /purge เพื่อล้างสแปมย้อนหลัง",
+            "🚫 BAN + ลบข้อความทั้งหมดของ user",
+        )
+        return
+    except Exception as e:
+        logger.warning(f"/purge ban/revoke failed for user {target.id} in chat {chat.id}: {e}")
+
+    try:
+        await target_message.delete()
+    except Exception:
+        pass
+
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=chat.id,
+            user_id=target.id,
+            permissions=ChatPermissions(can_send_messages=False),
+        )
+    except Exception as e:
+        logger.warning(f"/purge fallback restrict failed for user {target.id} in chat {chat.id}: {e}")
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    await alert_action(
+        context,
+        chat.id,
+        target,
+        "Admin ใช้ /purge แต่ล้างประวัติไม่สำเร็จ จึงลบข้อความที่ reply และ mute แทน",
+        "🔇 DELETE + MUTE ถาวร",
+    )
 
 
 # =============================
@@ -528,6 +630,7 @@ if __name__ == "__main__":
     )
 
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(MessageHandler(filters.ALL, check_message))
 
     # [STABILITY #4] Global error handler
