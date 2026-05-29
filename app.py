@@ -440,16 +440,18 @@ async def alert_action(context, chat_id: int, user, reason: str, action: str):
 # SETTINGS
 # =============================
 
-SUSPICIOUS_WORDS_TH = [
+SUSPICIOUS_WORDS_TH = [ 
     "ดูฟรี", "กดดู", "ลิงก์นี้", "คลิกที่นี่", "เข้าดู", "ดูต่อ",
-    "แจกฟรี", "เครดิตฟรี", "full clip", "full video", "ver video",
+    "แจกฟรี", "เครดิตฟรี", "เด็ก", "เดก", "กลุ่ม",
     "มปลาย", "มต้น", "เด็กนักเรียน", "เด็กมัธยม", "บริสุทธิ์", "ใสๆ",
     "สล็อต", "บาคาร่า", "แทงบอล", "ไม่ต้องฝาก",
     "ได้เงินจริง", "ถอนเงิน", "เครดิตฟรีไม่ต้องฝาก", "โปรแรง", "โปรแจก",
     "แอดไลน์", "แอดไลน์มา", "ขาย", "รับงาน", "รับทำ",
     "ไซด์ไลน์", "งานเอ็น", "เด็กเอ็น", "งานนอก",
-    "t.me", "bit.ly", "tinyurl", "shorturl",
-]
+    "เหมา", "สนใจ", "ทักมา", "ซื้อ", "รับล่อ",
+    "คลิปล้อควย", "เเนว", "จัดโปร", "กลุ่มใหม่",
+    "ราคา", "ฟรี", "เดม", "ทัก", "ทักได้",
+] 
 
 SUSPICIOUS_WORDS_EN = [
     "porn", "xxx", "nsfw", "18plus",
@@ -458,6 +460,8 @@ SUSPICIOUS_WORDS_EN = [
     "bot", "auto", "gift",
     "line", "dm", "inbox",
     "http", "https", "www", "telegram",
+    "full clip", "full video", "ver video",
+    "t.me", "bit.ly", "tinyurl", "shorturl",
 ]
 
 LINK_PATTERNS = [
