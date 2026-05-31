@@ -514,6 +514,24 @@ def extract_urls(text: str) -> list:
         text,
     )
 
+def extract_urls_from_entities(message) -> list[str]:
+    """
+    ดึง URL จาก message.entities และ message.caption_entities
+    จับลิงก์ที่ซ่อนอยู่ใต้ข้อความ (text_link) และลิงก์ที่ Telegram parse ให้อัตโนมัติ (url)
+    — ซึ่ง extract_urls() จาก text ดิบจับไม่ได้
+    """
+    urls: list[str] = []
+    for entities, txt in [
+        (message.entities or [], message.text or ""),
+        (message.caption_entities or [], message.caption or ""),
+    ]:
+        for entity in entities:
+            if entity.type == "text_link" and entity.url:
+                urls.append(entity.url)
+            elif entity.type == "url":
+                urls.append(txt[entity.offset: entity.offset + entity.length])
+    return urls
+
 def is_allowed(url: str) -> bool:
     if not url.startswith("http"):
         url = "http://" + url
@@ -530,7 +548,10 @@ def contains_bad_word(text: str) -> bool:
         if word in text:
             return True
     for word in SUSPICIOUS_WORDS_EN:
-        if re.search(r"\b" + re.escape(word) + r"\b", text):
+        escaped = re.escape(word)
+        # คำที่มีอักขระพิเศษ (เช่น t.me, bit.ly) ไม่ใช้ \b เพราะ . ไม่ใช่ word character
+        # → ใช้ lookaround แทน เพื่อกันจับ substring ผิดพลาด
+        if re.search(r"(?<!\w)" + escaped + r"(?!\w)", text):
             return True
     return False
 
@@ -759,7 +780,8 @@ async def _process_message(message, user, chat_id: int, context):
                 return
 
         # ——— Link filter ———
-        for url in extract_urls(text):
+        all_urls = extract_urls(text) + extract_urls_from_entities(message)
+        for url in all_urls:
             if not is_allowed(url):
                 try: await message.delete()
                 except Exception: pass
