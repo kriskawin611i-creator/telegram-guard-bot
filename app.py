@@ -61,6 +61,16 @@ def parse_chat_ids(raw: str | None) -> set[int]:
             logger.warning(f"Ignoring invalid chat id in ALLOWED_CHAT_IDS: {item!r}")
     return chat_ids
 
+def parse_usernames(raw: str | None) -> set[str]:
+    usernames: set[str] = set()
+    if not raw:
+        return usernames
+    for item in re.split(r"[,\s]+", raw.strip()):
+        username = item.strip().lstrip("@").lower()
+        if username:
+            usernames.add(username)
+    return usernames
+
 TOKEN = os.getenv("BOT_TOKEN")
 PORT  = parse_int_env("PORT", 10000)
 
@@ -69,6 +79,8 @@ PORT  = parse_int_env("PORT", 10000)
 # LEAVE_UNAUTHORIZED_CHATS=true       -> bot leaves groups not in the allowlist
 # DROP_PENDING_UPDATES=false          -> process Telegram backlog on restart
 ALLOWED_CHAT_IDS          = parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS"))
+OWNER_USER_IDS           = parse_chat_ids(os.getenv("OWNER_USER_IDS"))
+ALLOWED_BOT_USERNAMES    = parse_usernames(os.getenv("ALLOWED_BOT_USERNAMES"))
 LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
 DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", True)
 ALLOWED_UPDATE_TYPES     = ["message", "chat_member"]
@@ -121,6 +133,7 @@ def health():
         "status": "ok",
         "muted_count": len(user_muted_permanent),
         "allowed_chat_ids": sorted(ALLOWED_CHAT_IDS),
+        "allowed_bot_usernames": sorted(ALLOWED_BOT_USERNAMES),
         "drop_pending_updates": DROP_PENDING_UPDATES,
         "processed_updates_count": processed_updates_count,
         "last_update_at": last_update_at,
@@ -440,18 +453,16 @@ async def alert_action(context, chat_id: int, user, reason: str, action: str):
 # SETTINGS
 # =============================
 
-SUSPICIOUS_WORDS_TH = [ 
+SUSPICIOUS_WORDS_TH = [
     "ดูฟรี", "กดดู", "ลิงก์นี้", "คลิกที่นี่", "เข้าดู", "ดูต่อ",
-    "แจกฟรี", "เครดิตฟรี", "เด็ก", "เดก", "กลุ่ม",
+    "แจกฟรี", "เครดิตฟรี", "full clip", "full video", "ver video",
     "มปลาย", "มต้น", "เด็กนักเรียน", "เด็กมัธยม", "บริสุทธิ์", "ใสๆ",
     "สล็อต", "บาคาร่า", "แทงบอล", "ไม่ต้องฝาก",
     "ได้เงินจริง", "ถอนเงิน", "เครดิตฟรีไม่ต้องฝาก", "โปรแรง", "โปรแจก",
     "แอดไลน์", "แอดไลน์มา", "ขาย", "รับงาน", "รับทำ",
     "ไซด์ไลน์", "งานเอ็น", "เด็กเอ็น", "งานนอก",
-    "เหมา", "สนใจ", "ทักมา", "ซื้อ", "รับล่อ",
-    "คลิปล้อควย", "เเนว", "จัดโปร", "กลุ่มใหม่",
-    "ราคา", "ฟรี", "เดม", "ทัก", "ทักได้",
-] 
+    "t.me", "bit.ly", "tinyurl", "shorturl",
+]
 
 SUSPICIOUS_WORDS_EN = [
     "porn", "xxx", "nsfw", "18plus",
@@ -460,20 +471,37 @@ SUSPICIOUS_WORDS_EN = [
     "bot", "auto", "gift",
     "line", "dm", "inbox",
     "http", "https", "www", "telegram",
-    "full clip", "full video", "ver video",
-    "t.me", "bit.ly", "tinyurl", "shorturl",
 ]
 
 LINK_PATTERNS = [
     r"http[s]?://",
+    r"hxxp[s]?://",
     r"www\.",
     r"t\.me/",
+    r"telegram\.me/",
+    r"telegram\.dog/",
     r"@\w+",
-    r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online|live|shop|io)\b",
+    r"\b[a-zA-Z0-9-]+\.(com|net|org|xyz|top|club|site|vip|online|live|shop|io|me|link|click|app|pro|cc|ch|tv|to|co|info|biz|dev|fun|store|website|space|cam|lol|icu|one|bot)\b",
     r"bit\.ly/",
     r"tinyurl\.com/",
     r"shorturl\.",
+    r"cutt\.ly/",
+    r"is\.gd/",
+    r"buff\.ly/",
+    r"rebrand\.ly/",
+    r"lnkd\.in/",
 ]
+
+LINK_ENTITY_TYPES = {
+    "url",
+    "text_link",
+    "mention",
+    "text_mention",
+    "email",
+}
+
+INVISIBLE_CHARS_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]")
+LINK_NOISE_RE = re.compile(r"[\s\u00a0\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+")
 
 SUSPICIOUS_EMOJIS = {
     "🔥", "💦", "😍", "🥵", "💋", "👉", "👌", "🍑", "🍆",
@@ -505,7 +533,12 @@ ALLOWED_DOMAINS = {
 # =============================
 
 def normalize_text(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).lower()
+    text = unicodedata.normalize("NFKC", text)
+    text = INVISIBLE_CHARS_RE.sub("", text)
+    return text.lower()
+
+def compact_link_text(text: str) -> str:
+    return LINK_NOISE_RE.sub("", normalize_text(text))
 
 def extract_urls(text: str) -> list:
     text = normalize_text(text)
@@ -513,24 +546,6 @@ def extract_urls(text: str) -> list:
         r"(https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)",
         text,
     )
-
-def extract_urls_from_entities(message) -> list[str]:
-    """
-    ดึง URL จาก message.entities และ message.caption_entities
-    จับลิงก์ที่ซ่อนอยู่ใต้ข้อความ (text_link) และลิงก์ที่ Telegram parse ให้อัตโนมัติ (url)
-    — ซึ่ง extract_urls() จาก text ดิบจับไม่ได้
-    """
-    urls: list[str] = []
-    for entities, txt in [
-        (message.entities or [], message.text or ""),
-        (message.caption_entities or [], message.caption or ""),
-    ]:
-        for entity in entities:
-            if entity.type == "text_link" and entity.url:
-                urls.append(entity.url)
-            elif entity.type == "url":
-                urls.append(txt[entity.offset: entity.offset + entity.length])
-    return urls
 
 def is_allowed(url: str) -> bool:
     if not url.startswith("http"):
@@ -540,7 +555,30 @@ def is_allowed(url: str) -> bool:
 
 def contains_link(text: str) -> bool:
     text = normalize_text(text)
-    return any(re.search(p, text) for p in LINK_PATTERNS)
+    compact = compact_link_text(text)
+    return any(re.search(p, text) for p in LINK_PATTERNS) or any(
+        re.search(p, compact) for p in LINK_PATTERNS
+    )
+
+def entity_type_name(entity) -> str:
+    return str(getattr(entity, "type", "")).lower().rsplit(".", 1)[-1]
+
+def message_has_link(message) -> bool:
+    text = message.text or message.caption or ""
+    if contains_link(text):
+        return True
+
+    entities = list(getattr(message, "entities", None) or [])
+    entities += list(getattr(message, "caption_entities", None) or [])
+
+    for entity in entities:
+        entity_type = entity_type_name(entity)
+        if entity_type in LINK_ENTITY_TYPES:
+            return True
+        if getattr(entity, "url", None):
+            return True
+
+    return False
 
 def contains_bad_word(text: str) -> bool:
     text = normalize_text(text)
@@ -548,10 +586,7 @@ def contains_bad_word(text: str) -> bool:
         if word in text:
             return True
     for word in SUSPICIOUS_WORDS_EN:
-        escaped = re.escape(word)
-        # คำที่มีอักขระพิเศษ (เช่น t.me, bit.ly) ไม่ใช้ \b เพราะ . ไม่ใช่ word character
-        # → ใช้ lookaround แทน เพื่อกันจับ substring ผิดพลาด
-        if re.search(r"(?<!\w)" + escaped + r"(?!\w)", text):
+        if re.search(r"\b" + re.escape(word) + r"\b", text):
             return True
     return False
 
@@ -615,6 +650,102 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.chat_member.new_chat_member.user.id
         join_times[user_key(chat_id, user_id)] = time.time()
         cleanup_join_times()
+
+
+async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat = update.effective_chat
+    inviter = update.effective_user
+
+    if not message or not chat:
+        return
+
+    if not await guard_allowed_chat(update, context):
+        return
+    mark_update_seen()
+
+    new_members = message.new_chat_members or []
+    if not new_members:
+        return
+
+    for member in new_members:
+        join_times[user_key(chat.id, member.id)] = time.time()
+
+        if not getattr(member, "is_bot", False):
+            continue
+
+        if member.id == context.bot.id:
+            continue
+
+        username = (member.username or "").lstrip("@").lower()
+        if username and username in ALLOWED_BOT_USERNAMES:
+            logger.info(f"Allowed bot @{username} joined chat {chat.id}")
+            continue
+
+        if await is_admin_cached(context, chat.id, member.id):
+            logger.info(f"Admin bot @{username or member.id} is allowed in chat {chat.id}")
+            continue
+
+        inviter_is_admin = bool(inviter and await is_admin_cached(context, chat.id, inviter.id))
+        if inviter_is_admin:
+            logger.info(
+                f"Admin user {inviter.id} added bot @{username or member.id} "
+                f"to chat {chat.id}; allowed"
+            )
+            continue
+
+        bot_banned = False
+        inviter_banned = False
+
+        try:
+            await context.bot.ban_chat_member(
+                chat_id=chat.id,
+                user_id=member.id,
+                revoke_messages=True,
+            )
+            bot_banned = True
+        except Exception as e:
+            logger.warning(f"Failed to ban added bot {member.id} in chat {chat.id}: {e}")
+
+        if inviter and inviter.id not in {member.id, context.bot.id}:
+            try:
+                if not await is_admin_cached(context, chat.id, inviter.id):
+                    await context.bot.ban_chat_member(
+                        chat_id=chat.id,
+                        user_id=inviter.id,
+                        revoke_messages=True,
+                    )
+                    inviter_banned = True
+            except Exception as e:
+                logger.warning(f"Failed to ban bot inviter {inviter.id} in chat {chat.id}: {e}")
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        action_parts = []
+        if bot_banned:
+            action_parts.append("แบนบอทแปลกหน้า")
+        if inviter_banned:
+            action_parts.append("แบนคนที่เพิ่มบอท")
+        action_text = " + ".join(action_parts) if action_parts else "พยายามแบนแล้ว แต่สิทธิ์บอทอาจไม่พอ"
+        bot_label = f"@{username}" if username else f"ID: {member.id}"
+
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    "🚫 GUARD BOT\n\n"
+                    "พบการเพิ่มบอทโดยผู้ใช้ที่ไม่ใช่แอดมิน\n"
+                    f"บอท: {bot_label}\n"
+                    f"การดำเนินการ: {action_text}"
+                )
+            )
+        except Exception:
+            pass
+
+    cleanup_join_times()
 
 # =============================
 # MAIN FILTER
@@ -772,22 +903,20 @@ async def _process_message(message, user, chat_id: int, context):
         # ——— New member link ———
         join_key = user_key(chat_id, user.id)
         if join_key in join_times and time.time() - join_times[join_key] < 60:
-            if contains_link(text):
+            if message_has_link(message):
                 try: await message.delete()
                 except Exception: pass
                 await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", AUTO_ACTION_TEXT)
                 await mute_permanent()
                 return
 
-        # ——— Link filter ———
-        all_urls = extract_urls(text) + extract_urls_from_entities(message)
-        for url in all_urls:
-            if not is_allowed(url):
-                try: await message.delete()
-                except Exception: pass
-                await alert_action(context, chat_id, user, "ส่งลิงก์ที่ไม่อนุญาต", AUTO_ACTION_TEXT)
-                await mute_permanent()
-                return
+        # ——— Strict link filter ———
+        if message_has_link(message):
+            try: await message.delete()
+            except Exception: pass
+            await alert_action(context, chat_id, user, "ส่งลิงก์ทุกชนิด", AUTO_ACTION_TEXT)
+            await mute_permanent()
+            return
 
         # ——— Bad word ———
         if contains_bad_word(text):
@@ -825,16 +954,44 @@ async def _process_message(message, user, chat_id: int, context):
 async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat = update.effective_chat
+    user = update.effective_user
 
     if not message or not chat:
         return
 
     title = getattr(chat, "title", None) or getattr(chat, "username", None) or "private chat"
-    await message.reply_text(
+    text = (
         f"chat_id: {chat.id}\n"
         f"type: {chat.type}\n"
         f"title: {title}"
     )
+
+    logger.info(f"/chatid requested by user={getattr(user, 'id', None)}: {text.replace(chr(10), ' | ')}")
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if user and (not OWNER_USER_IDS or user.id in OWNER_USER_IDS):
+        try:
+            await context.bot.send_message(chat_id=user.id, text=text)
+            if chat.type != "private":
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text="ส่ง chat_id ให้ในแชตส่วนตัวแล้ว"
+                )
+            return
+        except Exception as e:
+            logger.warning(f"Could not DM chat_id to user {user.id}: {e}")
+
+    if chat.type == "private":
+        await message.reply_text(text)
+    else:
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text="บันทึก chat_id ไว้ใน Render Logs แล้ว"
+        )
 
 
 async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -992,6 +1149,7 @@ if __name__ == "__main__":
     )
 
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     application.add_handler(CommandHandler("chatid", chatid_command))
     application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(MessageHandler(filters.ALL, check_message))
