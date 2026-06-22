@@ -628,6 +628,23 @@ def is_gift_message(message) -> bool:
     text = message.text or message.caption or ""
     return bool(re.search(r"(unique collectible|gift from|pepe nft|sending as a gift)", text.lower()))
 
+def forbidden_message_reason(message, text: str) -> str | None:
+    if is_any_forward(message):
+        return "Forward ข้อความ (ทุกรูปแบบ)"
+    if is_story_share(message):
+        return "แชร์ Story"
+    if is_gift_message(message):
+        return "ส่ง Gift / NFT / Collectible"
+    if re.search(r"@\w+", text):
+        return "ส่ง @username"
+    if message_has_link(message):
+        return "ส่งลิงก์ทุกชนิด"
+    if contains_bad_word(text):
+        return "ใช้คำต้องห้าม"
+    if contains_suspicious_emoji(text):
+        return f"ส่ง Emoji ต้องสงสัย >= {EMOJI_THRESHOLD} ตัว"
+    return None
+
 # =============================
 # JOIN TRACK + CLEANUP
 # =============================
@@ -786,7 +803,8 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now  = time.time()
     key  = user_key(chat_id, user.id)
     last = user_last_processed.get(key, 0)
-    if not backlog and now - last < USER_COOLDOWN:
+    is_bot_user = bool(getattr(user, "is_bot", False))
+    if not is_bot_user and not backlog and now - last < USER_COOLDOWN:
         # ถ้าถูก mute ถาวรแล้ว → ลบทันทีโดยไม่รอ semaphore
         if is_permanently_muted(chat_id, user.id):
             try:
@@ -859,6 +877,16 @@ async def _process_message(message, user, chat_id: int, context):
                 )
             except Exception:
                 pass
+
+        # ——— Non-admin bot forbidden content ———
+        if getattr(user, "is_bot", False):
+            reason = forbidden_message_reason(message, text)
+            if reason:
+                try: await message.delete()
+                except Exception: pass
+                await alert_action(context, chat_id, user, f"บอทไม่ใช่แอดมิน: {reason}", AUTO_ACTION_TEXT)
+                await mute_permanent()
+                return
 
         # ——— Already permanently muted ———
         if is_permanently_muted(chat_id, user.id):
