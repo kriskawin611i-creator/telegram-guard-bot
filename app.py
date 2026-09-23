@@ -591,6 +591,35 @@ def contains_bad_word(text: str) -> bool:
             return True
     return False
 
+def contains_disallowed_language(text: str) -> bool:
+    """อนุญาตเฉพาะตัวอักษรไทยและอังกฤษ และบล็อกตัวเลขทุกระบบ"""
+    text = unicodedata.normalize("NFKC", text or "")
+
+    for ch in text:
+        category = unicodedata.category(ch)
+        code = ord(ch)
+
+        if category.startswith("L"):
+            # อนุญาตตัวอักษรไทยทั้งหมดใน Unicode Thai block
+            if 0x0E00 <= code <= 0x0E7F:
+                continue
+
+            # อนุญาตเฉพาะตัวอักษรอังกฤษ A-Z และ a-z
+            if "A" <= ch <= "Z" or "a" <= ch <= "z":
+                continue
+
+            return True
+
+        if category.startswith("N"):
+            # บล็อกตัวเลขทุกระบบ รวม 123, ๑๒๓, ١٢٣ และ ۱۲۳
+            return True
+
+        # อีโมจิ ช่องว่าง และเครื่องหมายให้ผ่านไปตรวจด้วยระบบเดิม
+        if not category.startswith(("L", "N")):
+            continue
+
+    return False
+
 def contains_suspicious_emoji(text: str) -> bool:
     return sum(1 for ch in text if ch in SUSPICIOUS_EMOJIS) >= EMOJI_THRESHOLD
 
@@ -642,6 +671,8 @@ def forbidden_message_reason(message, text: str) -> str | None:
         return "ส่งลิงก์ทุกชนิด"
     if contains_bad_word(text):
         return "ใช้คำต้องห้าม"
+    if contains_disallowed_language(text):
+        return "ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต"
     if contains_suspicious_emoji(text):
         return f"ส่ง Emoji ต้องสงสัย >= {EMOJI_THRESHOLD} ตัว"
     return None
@@ -952,6 +983,25 @@ async def _process_message(message, user, chat_id: int, context):
             try: await message.delete()
             except Exception: pass
             await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", AUTO_ACTION_TEXT)
+            await mute_permanent()
+            return
+
+        # ——— Language filter: allow Thai and English only ———
+        if contains_disallowed_language(text):
+            try:
+                await message.delete()
+            except Exception as e:
+                logger.warning(
+                    f"delete foreign-language message failed "
+                    f"for user {user.id} in chat {chat_id}: {e}"
+                )
+            await alert_action(
+                context,
+                chat_id,
+                user,
+                "ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต",
+                AUTO_ACTION_TEXT,
+            )
             await mute_permanent()
             return
 
