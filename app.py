@@ -592,7 +592,7 @@ def contains_bad_word(text: str) -> bool:
     return False
 
 def contains_disallowed_language(text: str) -> bool:
-    """อนุญาตเฉพาะตัวอักษรไทยและอังกฤษ และบล็อกตัวเลขทุกระบบ"""
+    """อนุญาตไทย อังกฤษ เลขสากล 0-9 และเลขไทย ๐-๙"""
     text = unicodedata.normalize("NFKC", text or "")
 
     for ch in text:
@@ -611,7 +611,11 @@ def contains_disallowed_language(text: str) -> bool:
             return True
 
         if category.startswith("N"):
-            # บล็อกตัวเลขทุกระบบ รวม 123, ๑๒๓, ١٢٣ และ ۱۲۳
+            # อนุญาตเลขสากล 0-9 และเลขไทย ๐-๙
+            if "0" <= ch <= "9" or 0x0E50 <= code <= 0x0E59:
+                continue
+
+            # บล็อกเลขระบบอื่น เช่น ١٢٣ และ ۱۲۳
             return True
 
         # อีโมจิ ช่องว่าง และเครื่องหมายให้ผ่านไปตรวจด้วยระบบเดิม
