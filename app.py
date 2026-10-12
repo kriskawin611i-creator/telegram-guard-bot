@@ -1,16 +1,18 @@
 import os
 import re
 import json
+import html
 import time
 import asyncio
 import logging
+import random
 import threading
 import unicodedata
 from collections import defaultdict
 from urllib.parse import urlparse
 
 from flask import Flask
-from telegram import Update, ChatPermissions
+from telegram import Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import RetryAfter, TimedOut, NetworkError, Forbidden
 from telegram.ext import (
     ApplicationBuilder,
@@ -71,6 +73,38 @@ def parse_usernames(raw: str | None) -> set[str]:
             usernames.add(username)
     return usernames
 
+def parse_welcome_group_links(raw: str | None) -> list[dict]:
+    links: list[dict] = []
+    if not raw:
+        return links
+
+    for item in re.split(r"[\n,;]+", raw.strip()):
+        item = item.strip()
+        if not item:
+            continue
+
+        parts = [part.strip() for part in item.split("|")]
+        if len(parts) < 2:
+            logger.warning(f"Ignoring invalid WELCOME_GROUP_LINKS item: {item!r}")
+            continue
+
+        title = parts[0]
+        url = parts[1]
+        if not title or not url.startswith(("http://", "https://")):
+            logger.warning(f"Ignoring invalid welcome link: {item!r}")
+            continue
+
+        chat_id = None
+        if len(parts) >= 3 and parts[2]:
+            try:
+                chat_id = int(parts[2])
+            except ValueError:
+                logger.warning(f"Ignoring invalid welcome chat id in item: {item!r}")
+
+        links.append({"title": title, "url": url, "chat_id": chat_id})
+
+    return links
+
 TOKEN = os.getenv("BOT_TOKEN")
 PORT  = parse_int_env("PORT", 10000)
 
@@ -84,6 +118,48 @@ ALLOWED_BOT_USERNAMES    = parse_usernames(os.getenv("ALLOWED_BOT_USERNAMES"))
 LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
 DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", True)
 ALLOWED_UPDATE_TYPES     = ["message", "chat_member"]
+
+DEFAULT_WELCOME_TEXT = (
+    "ยินดีต้อนรับ {name} เข้าสู่กลุ่ม\n\n"
+    "กลุ่มนี้เข้าฟรี ไม่มีค่าใช้จ่าย\n"
+    "สามารถเลือกเข้ากลุ่มอื่นในเครือได้จากปุ่มด้านล่าง"
+)
+
+DEFAULT_WELCOME_GROUP_LINKS = [
+    {"title": "วาร์ปxีรีเทิร์น", "url": "https://t.me/+c0BvcQliwLg1ODY1", "chat_id": -1004291436088},
+    {"title": "นักล่าxี", "url": "https://t.me/+6-9URc7-fGxiZGY1", "chat_id": -1003957812190},
+    {"title": "ดoนxีบิน", "url": "https://t.me/+t9fiV42gGXVkMDU1", "chat_id": -1004272453579},
+    {"title": "อัศวินโต๊ะกลม", "url": "https://t.me/+YhaQ5nEkDe1mOWE1", "chat_id": -1004347482362},
+    {"title": "อัศวินโต๊ะหมี", "url": "https://t.me/+aHZjKajBxlJkNTY1", "chat_id": -1004343764829},
+    {"title": "อัศวินโต้ะส้ม", "url": "https://t.me/+JJHSILN2jPJlZjY1", "chat_id": -1004354431499},
+    {"title": "ถ้ำหมี", "url": "https://t.me/+WeYXLsfg24c5YmVl", "chat_id": -1003865858642},
+    {"title": "xีพาหลอน", "url": "https://t.me/+o3i__Vseq_BmZTQ1", "chat_id": -1004451470486},
+    {"title": "av นานาชาติ", "url": "https://t.me/avshongmhee", "chat_id": -1003771094654},
+    {"title": "ส่องหมี", "url": "https://t.me/shongmheeav", "chat_id": -1003854594118},
+    {"title": "นั่งกระดอ", "url": "https://t.me/+iEsjL4Lv-sJkMjA1", "chat_id": -1004440859880},
+    {"title": "โหนกระดอ", "url": "https://t.me/+Tirl3g9R0ZoxMjll", "chat_id": -1003732267246},
+    {"title": "คนตื่นหรรม", "url": "https://t.me/+P3cwAfy2ZBw5NTdl", "chat_id": -1004446325944},
+    {"title": "ซดน้ำกาม", "url": "https://t.me/Sodnamkam", "chat_id": -1003896586263},
+    {"title": "กระดอซิ่ง", "url": "https://t.me/+64Rly-JlTGJiNGFl", "chat_id": -1004207502951},
+    {"title": "แก๊งระเบิดตูด", "url": "https://t.me/+ICkHBTdE1RtjMTY9", "chat_id": -1003995563111},
+    {"title": "จุดระเบิดหี", "url": "https://t.me/+0j0apdY7YIZhMThl", "chat_id": -1004390299584},
+    {"title": "หีระเบิด", "url": "https://t.me/heerabeurt", "chat_id": -1003903122010},
+    {"title": "ล่านม", "url": "https://t.me/+1ZytXlpYxQYwNjg1", "chat_id": -1004419231533},
+    {"title": "รหัสพาเพลิน", "url": "https://t.me/+mZkrvg6X7qI3ZmNl", "chat_id": -1004331569003},
+    {"title": "ดูบอล4K", "url": "https://t.me/+ZiDarzoIddowMGY1", "chat_id": -1004438898032},
+    {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578},
+    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1003854594118},
+    {"title": "แหกกี", "url": "https://t.me/+t18FldNmBJRiZWY1", "chat_id": -1004381935437},
+    {"title": "สำลักน้ำหอย", "url": "https://t.me/+8w5k_3MY0XRhYWU1", "chat_id": -1004420850490},
+    {"title": "ดูดดอ", "url": "https://t.me/+vD_uvtKIf5o0ZTk1", "chat_id": -1003962975835},
+    {"title": "อมเพลิน", "url": "https://t.me/+jzk49s0nKpMxYWRl", "chat_id": -1004497556737},
+]
+
+WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
+WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 4))
+WELCOME_BUTTONS_PER_ROW = max(1, parse_int_env("WELCOME_BUTTONS_PER_ROW", 2))
+WELCOME_TEXT            = os.getenv("WELCOME_TEXT", DEFAULT_WELCOME_TEXT).replace("\\n", "\n")
+WELCOME_GROUP_LINKS     = parse_welcome_group_links(os.getenv("WELCOME_GROUP_LINKS")) or DEFAULT_WELCOME_GROUP_LINKS
 
 # =============================
 # CONCURRENCY CONTROL
@@ -416,6 +492,134 @@ def add_permanent_mute(chat_id: int, user_id: int) -> None:
     save_muted()
 
 # =============================
+# WELCOME MESSAGE
+# =============================
+
+WELCOME_FILE = "welcome_messages.json"
+_welcome_lock = threading.Lock()
+
+def load_welcome_messages() -> dict[int, int]:
+    try:
+        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
+            raw_items = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.warning(f"Failed to load {WELCOME_FILE}: {e}")
+        return {}
+
+    messages: dict[int, int] = {}
+    for chat_id, message_id in raw_items.items():
+        try:
+            messages[int(chat_id)] = int(message_id)
+        except Exception:
+            continue
+    return messages
+
+def save_welcome_messages() -> None:
+    tmp_file = f"{WELCOME_FILE}.tmp"
+    try:
+        data = {str(chat_id): message_id for chat_id, message_id in last_welcome_messages.items()}
+        with _welcome_lock:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp_file, WELCOME_FILE)
+    except Exception as e:
+        logger.warning(f"Failed to save {WELCOME_FILE}: {e}")
+
+last_welcome_messages: dict[int, int] = load_welcome_messages()
+
+def welcome_member_names(members) -> str:
+    labels: list[str] = []
+    for member in members[:3]:
+        try:
+            labels.append(member.mention_html())
+        except Exception:
+            name = getattr(member, "full_name", None) or getattr(member, "first_name", None) or "สมาชิกใหม่"
+            labels.append(html.escape(name))
+
+    if len(members) > 3:
+        labels.append(f"และอีก {len(members) - 3} คน")
+
+    return ", ".join(labels) if labels else "สมาชิกใหม่"
+
+def build_welcome_text(members) -> str:
+    template = WELCOME_TEXT or DEFAULT_WELCOME_TEXT
+    safe_template = html.escape(template)
+    return safe_template.replace("{name}", welcome_member_names(members))
+
+def build_welcome_keyboard(chat_id: int) -> InlineKeyboardMarkup | None:
+    if not WELCOME_GROUP_LINKS:
+        return None
+
+    available_links = [
+        item for item in WELCOME_GROUP_LINKS
+        if item.get("chat_id") is None or item.get("chat_id") != chat_id
+    ]
+    if not available_links:
+        available_links = WELCOME_GROUP_LINKS
+
+    count = min(WELCOME_BUTTON_COUNT, len(available_links))
+    selected_links = random.sample(available_links, count)
+    rows = []
+
+    for index in range(0, len(selected_links), WELCOME_BUTTONS_PER_ROW):
+        row = [
+            InlineKeyboardButton(item["title"], url=item["url"])
+            for item in selected_links[index:index + WELCOME_BUTTONS_PER_ROW]
+        ]
+        rows.append(row)
+
+    return InlineKeyboardMarkup(rows) if rows else None
+
+async def send_welcome_message(message, chat, members, context) -> None:
+    if not WELCOME_ENABLED or not WELCOME_GROUP_LINKS:
+        return
+
+    human_members = [member for member in members if not getattr(member, "is_bot", False)]
+    if not human_members:
+        return
+
+    old_message_id = last_welcome_messages.get(chat.id)
+    if old_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat.id, message_id=old_message_id)
+        except Exception as e:
+            logger.info(f"Could not delete old welcome message {old_message_id} in chat {chat.id}: {e}")
+        finally:
+            last_welcome_messages.pop(chat.id, None)
+            save_welcome_messages()
+
+    send_kwargs = {
+        "chat_id": chat.id,
+        "text": build_welcome_text(human_members),
+        "parse_mode": "HTML",
+        "reply_markup": build_welcome_keyboard(chat.id),
+        "disable_web_page_preview": True,
+    }
+
+    thread_id = getattr(message, "message_thread_id", None)
+    if thread_id:
+        send_kwargs["message_thread_id"] = thread_id
+
+    try:
+        sent_message = await context.bot.send_message(**send_kwargs)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome in chat {chat.id}: {e}")
+        if not thread_id:
+            return
+
+        send_kwargs.pop("message_thread_id", None)
+        try:
+            sent_message = await context.bot.send_message(**send_kwargs)
+        except Exception as e2:
+            logger.warning(f"Failed to send welcome fallback in chat {chat.id}: {e2}")
+            return
+
+    last_welcome_messages[chat.id] = sent_message.message_id
+    save_welcome_messages()
+
+# =============================
 # ALERT SYSTEM
 # =============================
 
@@ -720,6 +924,8 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
     new_members = message.new_chat_members or []
     if not new_members:
         return
+
+    await send_welcome_message(message, chat, new_members, context)
 
     for member in new_members:
         join_times[user_key(chat.id, member.id)] = time.time()
