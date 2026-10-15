@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from flask import Flask
 from telegram import Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import RetryAfter, TimedOut, NetworkError, Forbidden
+from telegram.error import RetryAfter, TimedOut, NetworkError, Forbidden, BadRequest
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -33,6 +33,11 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+# HTTPX logs include the full Telegram Bot API URL. Keep them out of INFO logs
+# so the bot token is never printed to Render logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 def parse_bool_env(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -116,8 +121,8 @@ ALLOWED_CHAT_IDS          = parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS"))
 OWNER_USER_IDS           = parse_chat_ids(os.getenv("OWNER_USER_IDS"))
 ALLOWED_BOT_USERNAMES    = parse_usernames(os.getenv("ALLOWED_BOT_USERNAMES"))
 LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
-DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", True)
-ALLOWED_UPDATE_TYPES     = ["message", "chat_member"]
+DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", False)
+ALLOWED_UPDATE_TYPES     = ["message", "edited_message", "chat_member"]
 
 DEFAULT_WELCOME_TEXT = (
     "ยินดีต้อนรับ {name} เข้าสู่กลุ่ม\n\n"
@@ -148,7 +153,13 @@ DEFAULT_WELCOME_GROUP_LINKS = [
     {"title": "รหัสพาเพลิน", "url": "https://t.me/+mZkrvg6X7qI3ZmNl", "chat_id": -1004331569003},
     {"title": "ดูบอล4K", "url": "https://t.me/+ZiDarzoIddowMGY1", "chat_id": -1004438898032},
     {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578},
-    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1003854594118},
+    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1001880394930},
+    {"title": "คนคลั่งxี", "url": "https://t.me/klangheev1", "chat_id": -1004375248238},
+    {"title": "จุดกางแตด", "url": "https://t.me/judkangtadd", "chat_id": -1004375050476},
+    {"title": "รวมพลคนบ้าxี", "url": "https://t.me/baheev1", "chat_id": -1004362852597},
+    {"title": "ช่วงเวลาวัยหนุ่ม", "url": "https://t.me/+l1791fWv_ZgwZDdl", "chat_id": -1003913348963},
+    {"title": "เหนียวมือครับ", "url": "https://t.me/+tx0yOG32-MVmNzFl", "chat_id": -1004499308589},
+    {"title": "เขื่อนจะแตก", "url": "https://t.me/+9nE4WdvB6FkyNjU1", "chat_id": -1003979538788},
     {"title": "แหกกี", "url": "https://t.me/+t18FldNmBJRiZWY1", "chat_id": -1004381935437},
     {"title": "สำลักน้ำหอย", "url": "https://t.me/+8w5k_3MY0XRhYWU1", "chat_id": -1004420850490},
     {"title": "ดูดดอ", "url": "https://t.me/+vD_uvtKIf5o0ZTk1", "chat_id": -1003962975835},
@@ -158,8 +169,16 @@ DEFAULT_WELCOME_GROUP_LINKS = [
 WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
 WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 4))
 WELCOME_BUTTONS_PER_ROW = max(1, parse_int_env("WELCOME_BUTTONS_PER_ROW", 2))
+WELCOME_BATCH_SECONDS   = max(1, parse_int_env("WELCOME_BATCH_SECONDS", 60))
+WELCOME_SEND_TIMEOUT    = max(1, parse_int_env("WELCOME_SEND_TIMEOUT", 5))
+WELCOME_MAX_CONCURRENT  = 1
+WELCOME_IDLE_WAIT       = max(1, parse_int_env("WELCOME_IDLE_WAIT", 10))
+WELCOME_SEND_INTERVAL   = max(0, parse_int_env("WELCOME_SEND_INTERVAL_MS", 1000)) / 1000
 WELCOME_TEXT            = os.getenv("WELCOME_TEXT", DEFAULT_WELCOME_TEXT).replace("\\n", "\n")
 WELCOME_GROUP_LINKS     = parse_welcome_group_links(os.getenv("WELCOME_GROUP_LINKS")) or DEFAULT_WELCOME_GROUP_LINKS
+
+CRITICAL_API_RETRIES    = max(0, parse_int_env("CRITICAL_API_RETRIES", 2))
+CRITICAL_RETRY_MAX_WAIT = max(1, parse_int_env("CRITICAL_RETRY_MAX_WAIT", 30))
 
 # =============================
 # CONCURRENCY CONTROL
@@ -169,17 +188,10 @@ WELCOME_GROUP_LINKS     = parse_welcome_group_links(os.getenv("WELCOME_GROUP_LIN
 
 MAX_CONCURRENT = 30
 _semaphore: asyncio.Semaphore | None = None  # สร้างใน event loop จริง (ดูด้านล่าง)
+_active_moderation = 0
+_moderation_idle_event: asyncio.Event | None = None
 
-# [STABILITY #2] Per-user cooldown — ถ้า user ส่งถี่เกิน 0.3 วินาที → ข้ามทันที
-# ลด API call ก่อนถึง semaphore เลย
-USER_COOLDOWN       = 0.3   # วินาที
-user_last_processed: dict[tuple[int, int], float] = {}
-
-# ถ้าบอทเพิ่งตื่นหลังล่ม Render จะส่ง pending updates เข้ามารัวมาก
-# ข้อความที่เก่ากว่านี้จะถือเป็น backlog และไม่โดน per-user cooldown ข้าม
-BACKLOG_MESSAGE_AGE = 30    # วินาที
-
-# [STABILITY #3] Alert dedup — ถ้า user ถูก alert ไปแล้วใน 60 วินาที → ไม่ alert ซ้ำ
+# Alert dedup — ถ้า user ถูก alert ไปแล้วใน 60 วินาที → ไม่ alert ซ้ำ
 # กัน bot ส่ง alert ท่วม group เวลาโดน spam หนัก
 ALERT_COOLDOWN      = 60    # วินาที
 user_last_alert: dict[tuple[int, int], float] = {}
@@ -187,11 +199,6 @@ user_last_alert: dict[tuple[int, int], float] = {}
 # เมื่อตรวจเจอสแปมเมอร์ ให้ ban พร้อมสั่ง Telegram ลบประวัติข้อความของ user คนนั้น
 # ถ้า Telegram ไม่อนุญาตหรือ bot สิทธิ์ไม่พอ จะ fallback เป็น mute ถาวรแบบเดิม
 PURGE_SPAMMER_HISTORY_ON_DETECT = True
-AUTO_ACTION_TEXT = (
-    "🚫 DELETE + BAN + ลบประวัติ"
-    if PURGE_SPAMMER_HISTORY_ON_DETECT
-    else "🔇 DELETE + MUTE ถาวร"
-)
 
 # =============================
 # WEB SERVER  (สำหรับ UptimeRobot)
@@ -208,20 +215,14 @@ def health():
     return {
         "status": "ok",
         "muted_count": len(user_muted_permanent),
-        "allowed_chat_ids": sorted(ALLOWED_CHAT_IDS),
-        "allowed_bot_usernames": sorted(ALLOWED_BOT_USERNAMES),
         "drop_pending_updates": DROP_PENDING_UPDATES,
         "processed_updates_count": processed_updates_count,
         "last_update_at": last_update_at,
         "last_error_at": last_error_at,
-        "last_error_message": last_error_message,
         "cache_sizes": {
             "join_times": len(join_times),
             "user_messages": len(user_messages),
-            "user_last_processed": len(user_last_processed),
-            "user_last_alert": len(user_last_alert),
-            "admin_cache": len(admin_cache),
-            "message_log_users": len(user_message_log),
+            "pending_welcome_chats": len(pending_welcome_members),
         },
     }, 200
 
@@ -243,9 +244,9 @@ last_error_message: str | None = None
 processed_updates_count = 0
 _runtime_cleanup_counter = 0
 RUNTIME_CLEANUP_EVERY = 500
-USER_STATE_TTL = 3600
 ALERT_STATE_TTL = max(ALERT_COOLDOWN * 10, 600)
 SPAM_WINDOW = 10
+BACKLOG_MESSAGE_AGE = 30
 
 # [PURGE FIX] เก็บ message_id รายคน เพื่อให้ /purge ลบโพสต์ทั้งหมดของ user ย้อนหลังได้
 # key = (chat_id, user_id) -> list[(message_id, timestamp)]
@@ -305,6 +306,61 @@ async def guard_allowed_chat(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.warning(f"Failed to leave unauthorized chat {chat.id}: {e}")
     return False
 
+def retry_after_seconds(error: RetryAfter) -> float:
+    value = getattr(error, "retry_after", 1)
+    if hasattr(value, "total_seconds"):
+        value = value.total_seconds()
+    try:
+        return max(0.1, float(value))
+    except (TypeError, ValueError):
+        return 1.0
+
+async def run_critical_action(label: str, operation, retries: int | None = None):
+    """Run a destructive moderation API call with bounded transient retries."""
+    max_retries = CRITICAL_API_RETRIES if retries is None else max(0, retries)
+
+    for attempt in range(max_retries + 1):
+        try:
+            return True, await operation()
+        except RetryAfter as e:
+            if attempt >= max_retries:
+                logger.error(f"{label} failed after rate-limit retries: {e}")
+                break
+
+            delay = retry_after_seconds(e)
+            if delay > CRITICAL_RETRY_MAX_WAIT:
+                logger.error(
+                    f"{label} requires retry after {delay:.1f}s; "
+                    f"exceeds safety limit {CRITICAL_RETRY_MAX_WAIT}s"
+                )
+                break
+
+            logger.warning(f"{label} rate limited; retrying in {delay:.1f}s")
+            await asyncio.sleep(delay + 0.1)
+        except (TimedOut, NetworkError) as e:
+            if attempt >= max_retries:
+                logger.error(f"{label} failed after network retries: {e}")
+                break
+            delay = min(0.5 * (2 ** attempt), 2.0)
+            logger.warning(f"{label} network error; retrying in {delay:.1f}s: {e}")
+            await asyncio.sleep(delay)
+        except Forbidden as e:
+            logger.error(f"{label} forbidden; check bot admin permissions: {e}")
+            break
+        except Exception as e:
+            logger.error(f"{label} failed: {e}")
+            break
+
+    return False, None
+
+async def delete_message_critical(
+    message,
+    label: str,
+    retries: int | None = None,
+) -> bool:
+    ok, _ = await run_critical_action(label, message.delete, retries=retries)
+    return ok
+
 def mark_update_seen() -> None:
     global last_update_at, processed_updates_count, _runtime_cleanup_counter
     last_update_at = time.time()
@@ -325,10 +381,6 @@ def cleanup_runtime_state() -> None:
         user_messages[key] = [t for t in times if now - t < SPAM_WINDOW]
         if not user_messages[key]:
             user_messages.pop(key, None)
-
-    for key, t in list(user_last_processed.items()):
-        if now - t > USER_STATE_TTL:
-            user_last_processed.pop(key, None)
 
     for key, t in list(user_last_alert.items()):
         if now - t > ALERT_STATE_TTL:
@@ -378,38 +430,62 @@ async def purge_user_messages(context, chat_id: int, user_id: int,
     คืนค่าจำนวนข้อความที่ลบสำเร็จ
     """
     now = time.time()
-    log = user_message_log.get((chat_id, user_id), [])
+    log_key = (chat_id, user_id)
+    log = list(user_message_log.get(log_key, []))
 
     ids: set[int] = set(extra_ids or [])     # ข้อความที่ admin reply → รวมไว้เสมอ
+    timestamps: dict[int, float] = {mid: timestamp for mid, timestamp in log}
     for mid, t in log:
         if now - t < MESSAGE_DELETABLE_AGE:  # เกิน 48 ชม. ลบไม่ได้ ข้ามไป
             ids.add(mid)
 
-    # เคลียร์ log ของ user คนนี้ทิ้ง (โดนแบนแล้ว ไม่ต้องเก็บต่อ)
-    user_message_log.pop((chat_id, user_id), None)
-
     if not ids:
+        user_message_log.pop(log_key, None)
         return 0
 
     ids_list = sorted(ids)
     deleted  = 0
+    failed_ids: set[int] = set()
 
     # ลบทีละชุด 100 ตัว (delete_messages = bulk API ของ Telegram)
     for i in range(0, len(ids_list), 100):
         chunk = ids_list[i:i + 100]
-        try:
-            await context.bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+        ok, _ = await run_critical_action(
+            f"bulk delete chat={chat_id} user={user_id}",
+            lambda chunk=chunk: context.bot.delete_messages(
+                chat_id=chat_id,
+                message_ids=chunk,
+            ),
+        )
+        if ok:
             deleted += len(chunk)
-        except Exception as e:
+        else:
             # fallback: ลบทีละข้อความ (เผื่อ PTB เก่าไม่มี delete_messages
             # หรือบางข้อความเกิน 48 ชม. / ลบไปแล้ว)
-            logger.warning(f"bulk delete failed in chat {chat_id}: {e} — fallback per-message")
+            logger.warning(f"bulk delete failed in chat {chat_id} — fallback per-message")
             for mid in chunk:
-                try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+                single_ok, _ = await run_critical_action(
+                    f"delete message={mid} chat={chat_id}",
+                    lambda mid=mid: context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=mid,
+                    ),
+                    retries=1,
+                )
+                if single_ok:
                     deleted += 1
-                except Exception:
-                    pass
+                else:
+                    failed_ids.add(mid)
+
+    # Keep failed IDs for a later /purge instead of losing them before the API
+    # confirms deletion. Entries without an original timestamp get "now".
+    if failed_ids:
+        user_message_log[log_key] = [
+            (mid, timestamps.get(mid, now))
+            for mid in sorted(failed_ids)
+        ][-MESSAGE_LOG_MAX_PER_USER:]
+    else:
+        user_message_log.pop(log_key, None)
 
     logger.info(f"purge_user_messages: deleted {deleted}/{len(ids_list)} msgs "
                 f"for user {user_id} in chat {chat_id}")
@@ -419,22 +495,30 @@ async def purge_user_messages(context, chat_id: int, user_id: int,
 # ADMIN CACHE
 # =============================
 
-admin_cache     : dict[tuple, tuple] = {}
+admin_cache     : dict[tuple, tuple[bool, float]] = {}
 ADMIN_CACHE_TTL = 300  # 5 นาที
 
-async def is_admin_cached(context, chat_id: int, user_id: int) -> bool:
+async def is_admin_cached(context, chat_id: int, user_id: int) -> bool | None:
+    """Return True/False when verified, or None when Telegram cannot verify."""
     now = time.time()
     key = (chat_id, user_id)
     if key in admin_cache:
         result, expire = admin_cache[key]
         if now < expire:
             return result
-    try:
-        member = await context.bot.get_chat_member(chat_id, user_id)
-        result = member.status in ("administrator", "creator")
-    except Exception:
-        result = False
-    admin_cache[key] = (result, now + ADMIN_CACHE_TTL)
+
+    ok, member = await run_critical_action(
+        f"get_chat_member chat={chat_id} user={user_id}",
+        lambda: context.bot.get_chat_member(chat_id, user_id),
+        retries=1,
+    )
+    if not ok or member is None:
+        # Never cache a network/permission failure as "not admin". Doing so can
+        # cause a real admin to be moderated for five minutes.
+        return None
+
+    result = member.status in ("administrator", "creator")
+    admin_cache[key] = (result, time.time() + ADMIN_CACHE_TTL)
     return result
 
 # =============================
@@ -488,46 +572,24 @@ def is_permanently_muted(chat_id: int, user_id: int) -> bool:
     return user_key(chat_id, user_id) in user_muted_permanent
 
 def add_permanent_mute(chat_id: int, user_id: int) -> None:
-    user_muted_permanent.add(user_key(chat_id, user_id))
+    key = user_key(chat_id, user_id)
+    if key in user_muted_permanent:
+        return
+    user_muted_permanent.add(key)
     save_muted()
 
 # =============================
 # WELCOME MESSAGE
 # =============================
 
-WELCOME_FILE = "welcome_messages.json"
-_welcome_lock = threading.Lock()
-
-def load_welcome_messages() -> dict[int, int]:
-    try:
-        with open(WELCOME_FILE, "r", encoding="utf-8") as f:
-            raw_items = json.load(f)
-    except FileNotFoundError:
-        return {}
-    except Exception as e:
-        logger.warning(f"Failed to load {WELCOME_FILE}: {e}")
-        return {}
-
-    messages: dict[int, int] = {}
-    for chat_id, message_id in raw_items.items():
-        try:
-            messages[int(chat_id)] = int(message_id)
-        except Exception:
-            continue
-    return messages
-
-def save_welcome_messages() -> None:
-    tmp_file = f"{WELCOME_FILE}.tmp"
-    try:
-        data = {str(chat_id): message_id for chat_id, message_id in last_welcome_messages.items()}
-        with _welcome_lock:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.replace(tmp_file, WELCOME_FILE)
-    except Exception as e:
-        logger.warning(f"Failed to save {WELCOME_FILE}: {e}")
-
-last_welcome_messages: dict[int, int] = load_welcome_messages()
+last_welcome_messages: dict[int, int] = {}
+stale_welcome_messages: dict[int, set[int]] = defaultdict(set)
+pending_welcome_members: dict[int, dict[int, object]] = defaultdict(dict)
+pending_welcome_threads: dict[int, int | None] = {}
+welcome_tasks: dict[int, asyncio.Task] = {}
+_welcome_semaphore: asyncio.Semaphore | None = None
+_welcome_rate_lock: asyncio.Lock | None = None
+_last_welcome_send_at = 0.0
 
 def welcome_member_names(members) -> str:
     labels: list[str] = []
@@ -552,12 +614,22 @@ def build_welcome_keyboard(chat_id: int) -> InlineKeyboardMarkup | None:
     if not WELCOME_GROUP_LINKS:
         return None
 
-    available_links = [
-        item for item in WELCOME_GROUP_LINKS
-        if item.get("chat_id") is None or item.get("chat_id") != chat_id
-    ]
+    grouped_links: dict[tuple[str, object], list[dict]] = defaultdict(list)
+    for item in WELCOME_GROUP_LINKS:
+        item_chat_id = item.get("chat_id")
+        if item_chat_id is not None and item_chat_id == chat_id:
+            continue
+
+        identity = (
+            ("chat_id", item_chat_id)
+            if item_chat_id is not None
+            else ("url", item.get("url"))
+        )
+        grouped_links[identity].append(item)
+
+    available_links = [random.choice(items) for items in grouped_links.values()]
     if not available_links:
-        available_links = WELCOME_GROUP_LINKS
+        return None
 
     count = min(WELCOME_BUTTON_COUNT, len(available_links))
     selected_links = random.sample(available_links, count)
@@ -572,7 +644,167 @@ def build_welcome_keyboard(chat_id: int) -> InlineKeyboardMarkup | None:
 
     return InlineKeyboardMarkup(rows) if rows else None
 
-async def send_welcome_message(message, chat, members, context) -> None:
+async def wait_for_moderation_idle(timeout: float) -> bool:
+    if _active_moderation == 0:
+        return True
+    if _moderation_idle_event is None:
+        return False
+
+    try:
+        await asyncio.wait_for(_moderation_idle_event.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        return False
+    return _active_moderation == 0
+
+async def wait_for_welcome_send_slot() -> None:
+    global _welcome_rate_lock, _last_welcome_send_at
+    if _welcome_rate_lock is None:
+        _welcome_rate_lock = asyncio.Lock()
+
+    async with _welcome_rate_lock:
+        delay = WELCOME_SEND_INTERVAL - (time.monotonic() - _last_welcome_send_at)
+        if delay > 0:
+            await asyncio.sleep(delay)
+        _last_welcome_send_at = time.monotonic()
+
+async def wait_for_welcome_batch(application) -> bool:
+    """Wait for the batch window, but leave promptly when the app is stopping."""
+    deadline = time.monotonic() + WELCOME_BATCH_SECONDS
+    while True:
+        if not getattr(application, "running", False):
+            return False
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+
+        await asyncio.sleep(min(1.0, remaining))
+
+async def send_welcome_message(bot, chat_id: int, thread_id: int | None, members) -> bool:
+    send_kwargs = {
+        "chat_id": chat_id,
+        "text": build_welcome_text(members),
+        "parse_mode": "HTML",
+        "reply_markup": build_welcome_keyboard(chat_id),
+        "disable_web_page_preview": True,
+    }
+
+    if thread_id:
+        send_kwargs["message_thread_id"] = thread_id
+
+    try:
+        sent_message = await asyncio.wait_for(
+            bot.send_message(**send_kwargs),
+            timeout=WELCOME_SEND_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            f"Skipped welcome in chat {chat_id}: send exceeded "
+            f"{WELCOME_SEND_TIMEOUT}s"
+        )
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to send welcome in chat {chat_id}: {e}")
+        return False
+
+    old_message_ids = set(stale_welcome_messages.pop(chat_id, set()))
+    old_message_id = last_welcome_messages.get(chat_id)
+    if old_message_id:
+        old_message_ids.add(old_message_id)
+    last_welcome_messages[chat_id] = sent_message.message_id
+
+    failed_deletes: set[int] = set()
+    remaining_old_ids = list(old_message_ids)
+    for index, old_message_id in enumerate(remaining_old_ids):
+        if old_message_id == sent_message.message_id:
+            continue
+        if _active_moderation > 0:
+            failed_deletes.update(remaining_old_ids[index:])
+            break
+        try:
+            await asyncio.wait_for(
+                bot.delete_message(chat_id=chat_id, message_id=old_message_id),
+                timeout=WELCOME_SEND_TIMEOUT,
+            )
+        except (TimedOut, NetworkError, RetryAfter, asyncio.TimeoutError) as e:
+            failed_deletes.add(old_message_id)
+            logger.info(f"Could not delete old welcome message {old_message_id} in chat {chat_id}: {e}")
+        except (BadRequest, Forbidden) as e:
+            # Permanent failure (already deleted or no permission): do not retry
+            # forever on every future welcome.
+            logger.info(f"Discarded stale welcome message {old_message_id} in chat {chat_id}: {e}")
+        except Exception as e:
+            failed_deletes.add(old_message_id)
+            logger.info(f"Could not delete old welcome message {old_message_id} in chat {chat_id}: {e}")
+
+    if failed_deletes:
+        stale_welcome_messages[chat_id].update(sorted(failed_deletes)[-10:])
+
+    return True
+
+async def run_welcome_queue(application, bot, chat_id: int) -> None:
+    global _welcome_semaphore
+
+    try:
+        while pending_welcome_members.get(chat_id):
+            logger.info(
+                f"Welcome queued for chat {chat_id}; "
+                f"collecting members for {WELCOME_BATCH_SECONDS}s"
+            )
+            if not await wait_for_welcome_batch(application):
+                return
+
+            members_by_id = pending_welcome_members.pop(chat_id, {})
+            thread_id = pending_welcome_threads.pop(chat_id, None)
+
+            if not members_by_id:
+                continue
+
+            # Welcome is optional and always waits behind active moderation.
+            # Keep the collected batch in this worker rather than losing it if
+            # the group happens to be busy at the end of the 60-second window.
+            while getattr(application, "running", False):
+                if not await wait_for_moderation_idle(WELCOME_IDLE_WAIT):
+                    continue
+
+                if _welcome_semaphore is None:
+                    _welcome_semaphore = asyncio.Semaphore(WELCOME_MAX_CONCURRENT)
+
+                async with _welcome_semaphore:
+                    if _active_moderation > 0:
+                        continue
+
+                    await wait_for_welcome_send_slot()
+                    if _active_moderation > 0:
+                        continue
+
+                    await send_welcome_message(
+                        bot,
+                        chat_id,
+                        thread_id,
+                        list(members_by_id.values()),
+                    )
+                    break
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.warning(f"Welcome queue failed in chat {chat_id}: {e}")
+    finally:
+        current_task = asyncio.current_task()
+        if welcome_tasks.get(chat_id) is current_task:
+            welcome_tasks.pop(chat_id, None)
+
+        if (
+            pending_welcome_members.get(chat_id)
+            and chat_id not in welcome_tasks
+            and getattr(application, "running", False)
+        ):
+            welcome_tasks[chat_id] = application.create_task(
+                run_welcome_queue(application, bot, chat_id),
+                name=f"welcome-{chat_id}",
+            )
+
+def queue_welcome_message(message, chat, members, context) -> None:
     if not WELCOME_ENABLED or not WELCOME_GROUP_LINKS:
         return
 
@@ -580,44 +812,21 @@ async def send_welcome_message(message, chat, members, context) -> None:
     if not human_members:
         return
 
-    old_message_id = last_welcome_messages.get(chat.id)
-    if old_message_id:
-        try:
-            await context.bot.delete_message(chat_id=chat.id, message_id=old_message_id)
-        except Exception as e:
-            logger.info(f"Could not delete old welcome message {old_message_id} in chat {chat.id}: {e}")
-        finally:
-            last_welcome_messages.pop(chat.id, None)
-            save_welcome_messages()
-
-    send_kwargs = {
-        "chat_id": chat.id,
-        "text": build_welcome_text(human_members),
-        "parse_mode": "HTML",
-        "reply_markup": build_welcome_keyboard(chat.id),
-        "disable_web_page_preview": True,
-    }
+    for member in human_members:
+        pending_welcome_members[chat.id][member.id] = member
 
     thread_id = getattr(message, "message_thread_id", None)
     if thread_id:
-        send_kwargs["message_thread_id"] = thread_id
+        pending_welcome_threads[chat.id] = thread_id
 
-    try:
-        sent_message = await context.bot.send_message(**send_kwargs)
-    except Exception as e:
-        logger.warning(f"Failed to send welcome in chat {chat.id}: {e}")
-        if not thread_id:
-            return
+    task = welcome_tasks.get(chat.id)
+    if task and not task.done():
+        return
 
-        send_kwargs.pop("message_thread_id", None)
-        try:
-            sent_message = await context.bot.send_message(**send_kwargs)
-        except Exception as e2:
-            logger.warning(f"Failed to send welcome fallback in chat {chat.id}: {e2}")
-            return
-
-    last_welcome_messages[chat.id] = sent_message.message_id
-    save_welcome_messages()
+    welcome_tasks[chat.id] = context.application.create_task(
+        run_welcome_queue(context.application, context.bot, chat.id),
+        name=f"welcome-{chat.id}",
+    )
 
 # =============================
 # ALERT SYSTEM
@@ -783,6 +992,16 @@ def message_has_link(message) -> bool:
         if getattr(entity, "url", None):
             return True
 
+    reply_markup = getattr(message, "reply_markup", None)
+    for row in getattr(reply_markup, "inline_keyboard", None) or []:
+        for button in row:
+            if getattr(button, "url", None):
+                return True
+            if getattr(button, "login_url", None):
+                return True
+            if getattr(button, "web_app", None):
+                return True
+
     return False
 
 def contains_bad_word(text: str) -> bool:
@@ -791,13 +1010,18 @@ def contains_bad_word(text: str) -> bool:
         if word in text:
             return True
     for word in SUSPICIOUS_WORDS_EN:
-        if re.search(r"\b" + re.escape(word) + r"\b", text):
+        if re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(word)}(?![A-Za-z0-9_])",
+            text,
+        ):
             return True
     return False
 
 def contains_disallowed_language(text: str) -> bool:
     """อนุญาตไทย อังกฤษ เลขสากล 0-9 และเลขไทย ๐-๙"""
-    text = unicodedata.normalize("NFKC", text or "")
+    # NFC preserves the original character system. NFKC would turn characters
+    # such as １２３, ², 𝟙 and Ａ into ASCII and incorrectly allow them.
+    text = unicodedata.normalize("NFC", text or "")
 
     for ch in text:
         category = unicodedata.category(ch)
@@ -822,6 +1046,16 @@ def contains_disallowed_language(text: str) -> bool:
             # บล็อกเลขระบบอื่น เช่น ١٢٣ และ ۱۲۳
             return True
 
+        if category.startswith("M"):
+            # อนุญาตสระ/วรรณยุกต์ไทย และตัวประกอบอีโมจิเท่านั้น
+            if 0x0E00 <= code <= 0x0E7F:
+                continue
+            if 0xFE00 <= code <= 0xFE0F or 0xE0100 <= code <= 0xE01EF:
+                continue
+            if code == 0x20E3:  # combining enclosing keycap
+                continue
+            return True
+
         # อีโมจิ ช่องว่าง และเครื่องหมายให้ผ่านไปตรวจด้วยระบบเดิม
         if not category.startswith(("L", "N")):
             continue
@@ -829,7 +1063,7 @@ def contains_disallowed_language(text: str) -> bool:
     return False
 
 def contains_suspicious_emoji(text: str) -> bool:
-    return sum(1 for ch in text if ch in SUSPICIOUS_EMOJIS) >= EMOJI_THRESHOLD
+    return sum(text.count(emoji) for emoji in SUSPICIOUS_EMOJIS) >= EMOJI_THRESHOLD
 
 def is_spam(chat_id: int, user_id: int) -> bool:
     now = time.time()
@@ -839,10 +1073,14 @@ def is_spam(chat_id: int, user_id: int) -> bool:
     return len(user_messages[key]) >= 5
 
 def is_backlog_message(message) -> bool:
-    msg_date = getattr(message, "date", None)
-    if not msg_date:
+    """Identify old queued updates without skipping their content checks."""
+    message_date = getattr(message, "date", None)
+    if not message_date:
         return False
-    return time.time() - msg_date.timestamp() > BACKLOG_MESSAGE_AGE
+    try:
+        return time.time() - message_date.timestamp() > BACKLOG_MESSAGE_AGE
+    except (AttributeError, TypeError, ValueError, OSError):
+        return False
 
 # =============================
 # DETECT FORWARD / STORY / GIFT
@@ -902,14 +1140,18 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     mark_update_seen()
 
+    chat_id = update.effective_chat.id
+    user_id = update.chat_member.new_chat_member.user.id
+
+    # Promotion/demotion/member changes invalidate any cached admin result.
+    admin_cache.pop((chat_id, user_id), None)
+
     if update.chat_member.new_chat_member.status == "member":
-        chat_id = update.effective_chat.id
-        user_id = update.chat_member.new_chat_member.user.id
         join_times[user_key(chat_id, user_id)] = time.time()
         cleanup_join_times()
 
 
-async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _handle_new_members_impl(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat = update.effective_chat
     inviter = update.effective_user
@@ -925,8 +1167,6 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not new_members:
         return
 
-    await send_welcome_message(message, chat, new_members, context)
-
     for member in new_members:
         join_times[user_key(chat.id, member.id)] = time.time()
 
@@ -941,47 +1181,58 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
             logger.info(f"Allowed bot @{username} joined chat {chat.id}")
             continue
 
-        if await is_admin_cached(context, chat.id, member.id):
+        member_admin_status = await is_admin_cached(context, chat.id, member.id)
+        if member_admin_status is None:
+            logger.warning(
+                f"Skipped bot-join enforcement in chat {chat.id}: "
+                f"could not verify bot {member.id} admin status"
+            )
+            continue
+        if member_admin_status:
             logger.info(f"Admin bot @{username or member.id} is allowed in chat {chat.id}")
             continue
 
-        inviter_is_admin = bool(inviter and await is_admin_cached(context, chat.id, inviter.id))
-        if inviter_is_admin:
+        inviter_admin_status: bool | None = False
+        if inviter and inviter.id not in {member.id, context.bot.id}:
+            inviter_admin_status = await is_admin_cached(context, chat.id, inviter.id)
+            if inviter_admin_status is None:
+                logger.warning(
+                    f"Skipped bot-join enforcement in chat {chat.id}: "
+                    f"could not verify inviter {inviter.id} admin status"
+                )
+                continue
+
+        if inviter_admin_status:
             logger.info(
                 f"Admin user {inviter.id} added bot @{username or member.id} "
                 f"to chat {chat.id}; allowed"
             )
             continue
 
-        bot_banned = False
+        bot_banned, _ = await run_critical_action(
+            f"ban added bot={member.id} chat={chat.id}",
+            lambda member_id=member.id: context.bot.ban_chat_member(
+                chat_id=chat.id,
+                user_id=member_id,
+                revoke_messages=True,
+            ),
+        )
         inviter_banned = False
 
-        try:
-            await context.bot.ban_chat_member(
-                chat_id=chat.id,
-                user_id=member.id,
-                revoke_messages=True,
-            )
-            bot_banned = True
-        except Exception as e:
-            logger.warning(f"Failed to ban added bot {member.id} in chat {chat.id}: {e}")
-
         if inviter and inviter.id not in {member.id, context.bot.id}:
-            try:
-                if not await is_admin_cached(context, chat.id, inviter.id):
-                    await context.bot.ban_chat_member(
-                        chat_id=chat.id,
-                        user_id=inviter.id,
-                        revoke_messages=True,
-                    )
-                    inviter_banned = True
-            except Exception as e:
-                logger.warning(f"Failed to ban bot inviter {inviter.id} in chat {chat.id}: {e}")
+            inviter_banned, _ = await run_critical_action(
+                f"ban bot inviter={inviter.id} chat={chat.id}",
+                lambda inviter_id=inviter.id: context.bot.ban_chat_member(
+                    chat_id=chat.id,
+                    user_id=inviter_id,
+                    revoke_messages=True,
+                ),
+            )
 
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        await delete_message_critical(
+            message,
+            f"delete bot-join service message chat={chat.id}",
+        )
 
         action_parts = []
         if bot_banned:
@@ -1005,14 +1256,21 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
             pass
 
     cleanup_join_times()
+    queue_welcome_message(message, chat, new_members, context)
+
+
+async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Bot-join enforcement is moderation too, so welcome traffic must wait.
+    await run_moderation_operation(
+        lambda: _handle_new_members_impl(update, context)
+    )
 
 # =============================
 # MAIN FILTER
 # =============================
 
 async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    message = update.message
+    message = update.effective_message
     if not message:
         return
 
@@ -1020,49 +1278,112 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     mark_update_seen()
 
-    chat_id = update.effective_chat.id
+    chat = update.effective_chat
+    if not chat:
+        return
+    chat_id = chat.id
 
     command_text = message.text or ""
-    if re.match(r"^/purge(?:@\w+)?(?:\s|$)", command_text, re.IGNORECASE):
+    if update.message is not None and re.match(
+        r"^/purge(?:@\w+)?(?:\s|$)",
+        command_text,
+        re.IGNORECASE,
+    ):
         await purge_command(update, context)
         return
 
-    if message.sender_chat:
+    sender_chat = getattr(message, "sender_chat", None)
+    if sender_chat:
+        # Messages sent as this group are anonymous-admin messages. External
+        # channels are inspected separately so channel spam cannot bypass rules.
+        if sender_chat.id == chat_id:
+            return
+        await run_moderation_operation(
+            lambda: process_sender_chat_message(
+                message,
+                sender_chat,
+                chat_id,
+                context,
+            )
+        )
         return
 
     user = message.from_user
     if not user:
         return
 
-    # [PURGE FIX] บันทึก message_id ของ user ไว้ก่อน เผื่อ admin สั่ง /purge ภายหลัง
-    # ทำก่อน cooldown เพื่อให้เก็บ id ของพวก flood ได้ครบ แม้ข้อความนั้นจะถูกข้ามการตรวจ
+    # บันทึก message_id ของ user ไว้ก่อน เผื่อ admin สั่ง /purge ภายหลัง
     record_message(chat_id, user.id, message.message_id)
 
-    backlog = is_backlog_message(message)
+    # Every message is checked. Skipping rapid messages would create a window
+    # where a clean post followed by a malicious post can evade moderation.
+    await run_moderation_operation(
+        lambda: _process_message(message, user, chat_id, context)
+    )
 
-    # [STABILITY #2] Per-user cooldown — fast path ก่อน semaphore
-    # ถ้า user ส่งถี่เกิน 0.3 วินาที ตรวจสอบว่าอยู่ใน muted หรือเปล่า
-    now  = time.time()
-    key  = user_key(chat_id, user.id)
-    last = user_last_processed.get(key, 0)
-    is_bot_user = bool(getattr(user, "is_bot", False))
-    if not is_bot_user and not backlog and now - last < USER_COOLDOWN:
-        # ถ้าถูก mute ถาวรแล้ว → ลบทันทีโดยไม่รอ semaphore
-        if is_permanently_muted(chat_id, user.id):
-            try:
-                await message.delete()
-            except Exception:
-                pass
+
+async def run_moderation_operation(operation) -> None:
+    """Run moderation with bounded concurrency and expose its busy state."""
+    global _active_moderation, _moderation_idle_event
+
+    if _moderation_idle_event is None:
+        _moderation_idle_event = asyncio.Event()
+        _moderation_idle_event.set()
+
+    _active_moderation += 1
+    _moderation_idle_event.clear()
+    try:
+        if _semaphore is None:
+            await operation()
+        else:
+            async with _semaphore:
+                await operation()
+    finally:
+        _active_moderation = max(0, _active_moderation - 1)
+        if _active_moderation == 0:
+            _moderation_idle_event.set()
+
+
+async def process_sender_chat_message(message, sender_chat, chat_id: int, context) -> None:
+    """Moderate a message posted as an external channel/sender chat."""
+    text = message.text or message.caption or ""
+    reason = forbidden_message_reason(message, text)
+    if not reason:
         return
-    user_last_processed[key] = now
 
-    # [STABILITY #1] Global semaphore — process ได้สูงสุด MAX_CONCURRENT พร้อมกัน
-    if _semaphore is None:
-        await _process_message(message, user, chat_id, context)
-        return
+    deleted = await delete_message_critical(
+        message,
+        f"delete sender_chat message chat={chat_id} sender_chat={sender_chat.id}",
+        retries=0,
+    )
 
-    async with _semaphore:
-        await _process_message(message, user, chat_id, context)
+    ban_method = getattr(context.bot, "ban_chat_sender_chat", None)
+    sender_banned = False
+    if callable(ban_method):
+        sender_banned, _ = await run_critical_action(
+            f"ban sender_chat={sender_chat.id} chat={chat_id}",
+            lambda: ban_method(chat_id=chat_id, sender_chat_id=sender_chat.id),
+        )
+    else:
+        logger.error("Installed Telegram library does not support ban_chat_sender_chat")
+
+    if sender_banned:
+        action = "🚫 ลบข้อความ + แบนช่องผู้ส่ง"
+    elif deleted:
+        action = "⚠️ ลบข้อความแล้ว แต่แบนช่องผู้ส่งไม่สำเร็จ"
+    else:
+        action = "⚠️ ลบข้อความและแบนช่องผู้ส่งไม่สำเร็จ — ตรวจสิทธิ์บอท"
+
+    sender_name = html.escape(
+        str(getattr(sender_chat, "title", None) or sender_chat.id)
+    )
+    await alert_action(
+        context,
+        chat_id,
+        None,
+        f"ช่องภายนอก {sender_name}: {reason}",
+        action,
+    )
 
 
 async def _process_message(message, user, chat_id: int, context):
@@ -1074,31 +1395,43 @@ async def _process_message(message, user, chat_id: int, context):
         text = message.text or message.caption or ""
 
         # ——— Admin bypass ———
-        if await is_admin_cached(context, chat_id, user.id):
+        admin_status = await is_admin_cached(context, chat_id, user.id)
+        if admin_status is None:
+            logger.warning(
+                f"Skipped destructive moderation for user {user.id} in chat "
+                f"{chat_id}: admin status could not be verified"
+            )
+            return
+        if admin_status:
             return
 
         # ————————————————————————
         # PERMANENT MUTE HELPER
         # ————————————————————————
 
-        async def mute_permanent():
-            add_permanent_mute(chat_id, user.id)
+        async def mute_permanent() -> str:
             if PURGE_SPAMMER_HISTORY_ON_DETECT:
-                try:
-                    await context.bot.ban_chat_member(
+                ban_ok, _ = await run_critical_action(
+                    f"ban spammer={user.id} chat={chat_id}",
+                    lambda: context.bot.ban_chat_member(
                         chat_id=chat_id,
                         user_id=user.id,
                         revoke_messages=True,
+                    ),
+                )
+                if ban_ok:
+                    deleted_count = await purge_user_messages(
+                        context,
+                        chat_id,
+                        user.id,
                     )
-                    # [PURGE FIX] ลบโพสต์ทั้งหมดของสแปมเมอร์ที่ตรวจเจอ
-                    # (revoke_messages ตอน ban ไม่การันตีว่าลบจริง จึงลบเองด้วย)
-                    await purge_user_messages(context, chat_id, user.id)
-                    return
-                except Exception as e:
-                    logger.warning(f"ban failed for user {user.id} in chat {chat_id}: {e}")
+                    if deleted_count:
+                        return f"🚫 BAN + ลบประวัติ {deleted_count} ข้อความ"
+                    return "🚫 BAN สำเร็จ"
 
-            try:
-                await context.bot.restrict_chat_member(
+            restrict_ok, _ = await run_critical_action(
+                f"restrict spammer={user.id} chat={chat_id}",
+                lambda: context.bot.restrict_chat_member(
                     chat_id=chat_id,
                     user_id=user.id,
                     permissions=ChatPermissions(
@@ -1116,119 +1449,99 @@ async def _process_message(message, user, chat_id: int, context):
                         can_invite_users          = False,
                         can_pin_messages          = False,
                     ),
-                )
-            except Exception:
-                pass
+                ),
+            )
+            if restrict_ok:
+                return "🔇 MUTE ถาวร"
+            return "⚠️ BAN/MUTE ไม่สำเร็จ — ตรวจสิทธิ์บอท"
+
+        async def enforce_violation(reason: str) -> None:
+            # The spam message and sender are handled before any optional alert.
+            # Mark synchronously before the first API await so simultaneous
+            # messages from the same spammer do not trigger duplicate bans.
+            add_permanent_mute(chat_id, user.id)
+            deleted = await delete_message_critical(
+                message,
+                f"delete violation chat={chat_id} user={user.id}",
+                retries=0,
+            )
+            action = await mute_permanent()
+            if not deleted:
+                action += " (ลบข้อความต้นเหตุไม่สำเร็จ)"
+            await alert_action(context, chat_id, user, reason, action)
 
         # ——— Non-admin bot forbidden content ———
         if getattr(user, "is_bot", False):
             reason = forbidden_message_reason(message, text)
             if reason:
-                try: await message.delete()
-                except Exception: pass
-                await alert_action(context, chat_id, user, f"บอทไม่ใช่แอดมิน: {reason}", AUTO_ACTION_TEXT)
-                await mute_permanent()
+                await enforce_violation(f"บอทไม่ใช่แอดมิน: {reason}")
                 return
 
         # ——— Already permanently muted ———
         if is_permanently_muted(chat_id, user.id):
-            try:
-                await message.delete()
-            except Exception:
-                pass
+            await delete_message_critical(
+                message,
+                f"delete muted-user message chat={chat_id} user={user.id}",
+                retries=0,
+            )
             return
 
         # ——— Forward ———
         if is_any_forward(message):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "Forward ข้อความ (ทุกรูปแบบ)", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("Forward ข้อความ (ทุกรูปแบบ)")
             return
 
         # ——— Story ———
         if is_story_share(message):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "แชร์ Story", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("แชร์ Story")
             return
 
         # ——— Gift / NFT ———
         if is_gift_message(message):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "ส่ง Gift / NFT / Collectible", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("ส่ง Gift / NFT / Collectible")
             return
 
         # ——— @username ———
         if re.search(r"@\w+", text):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "ส่ง @username", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("ส่ง @username")
             return
 
         # ——— New member link ———
         join_key = user_key(chat_id, user.id)
         if join_key in join_times and time.time() - join_times[join_key] < 60:
             if message_has_link(message):
-                try: await message.delete()
-                except Exception: pass
-                await alert_action(context, chat_id, user, "สมาชิกใหม่ส่งลิงก์", AUTO_ACTION_TEXT)
-                await mute_permanent()
+                await enforce_violation("สมาชิกใหม่ส่งลิงก์")
                 return
 
         # ——— Strict link filter ———
         if message_has_link(message):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "ส่งลิงก์ทุกชนิด", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("ส่งลิงก์ทุกชนิด")
             return
 
         # ——— Bad word ———
         if contains_bad_word(text):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "ใช้คำต้องห้าม", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation("ใช้คำต้องห้าม")
             return
 
         # ——— Language filter: allow Thai and English only ———
         if contains_disallowed_language(text):
-            try:
-                await message.delete()
-            except Exception as e:
-                logger.warning(
-                    f"delete foreign-language message failed "
-                    f"for user {user.id} in chat {chat_id}: {e}"
-                )
-            await alert_action(
-                context,
-                chat_id,
-                user,
-                "ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต",
-                AUTO_ACTION_TEXT,
-            )
-            await mute_permanent()
+            await enforce_violation("ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต")
             return
 
         # ——— Suspicious emoji ———
         if contains_suspicious_emoji(text):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, f"ส่ง Emoji ต้องสงสัย ≥ {EMOJI_THRESHOLD} ตัว", AUTO_ACTION_TEXT)
-            await mute_permanent()
+            await enforce_violation(
+                f"ส่ง Emoji ต้องสงสัย ≥ {EMOJI_THRESHOLD} ตัว"
+            )
             return
 
         # ——— Spam flood ———
-        if is_spam(chat_id, user.id):
-            try: await message.delete()
-            except Exception: pass
-            await alert_action(context, chat_id, user, "Spam ข้อความ", AUTO_ACTION_TEXT)
-            await mute_permanent()
+        if (
+            getattr(message, "edit_date", None) is None
+            and not is_backlog_message(message)
+            and is_spam(chat_id, user.id)
+        ):
+            await enforce_violation("Spam ข้อความ")
             return
 
     except Exception as e:
@@ -1283,7 +1596,7 @@ async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _purge_command_impl(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     user = update.effective_user
     chat = update.effective_chat
@@ -1305,9 +1618,20 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"reply={bool(message.reply_to_message)}"
     )
 
-    if not sender_chat_is_group and (not user or not await is_admin_cached(context, chat.id, user.id)):
-        await message.reply_text("คำสั่งนี้ใช้ได้เฉพาะ admin")
-        return
+    if not sender_chat_is_group:
+        if not user:
+            await message.reply_text("คำสั่งนี้ใช้ได้เฉพาะ admin")
+            return
+
+        invoker_admin_status = await is_admin_cached(context, chat.id, user.id)
+        if invoker_admin_status is None:
+            await message.reply_text(
+                "ตรวจสอบสิทธิ์ admin ไม่สำเร็จชั่วคราว กรุณาลองใหม่"
+            )
+            return
+        if not invoker_admin_status:
+            await message.reply_text("คำสั่งนี้ใช้ได้เฉพาะ admin")
+            return
 
     target_message = message.reply_to_message
     if not target_message or not target_message.from_user:
@@ -1315,34 +1639,40 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target = target_message.from_user
-    if await is_admin_cached(context, chat.id, target.id):
+    target_admin_status = await is_admin_cached(context, chat.id, target.id)
+    if target_admin_status is None:
+        await message.reply_text(
+            "ตรวจสอบสถานะผู้ใช้เป้าหมายไม่สำเร็จชั่วคราว กรุณาลองใหม่"
+        )
+        return
+    if target_admin_status:
         await message.reply_text("ไม่ล้างข้อความของ admin")
         return
 
     add_permanent_mute(chat.id, target.id)
 
     # ——— 1) Ban + revoke (เป็น pass แรกแบบฟรี — แต่ไม่พึ่งมันลบจริง) ———
-    ban_ok = False
-    try:
-        # revoke_messages=True — ให้ Telegram ช่วยลบอีกชั้น (เราจะลบทั้งหมดอยู่แล้ว)
-        await context.bot.ban_chat_member(
+    ban_ok, _ = await run_critical_action(
+        f"/purge ban user={target.id} chat={chat.id}",
+        lambda: context.bot.ban_chat_member(
             chat_id=chat.id,
             user_id=target.id,
             revoke_messages=True,
-        )
-        ban_ok = True
+        ),
+    )
+    restrict_ok = False
+    if ban_ok:
         logger.info(f"/purge ban OK for user {target.id} in chat {chat.id}")
-    except Exception as e:
-        logger.warning(f"/purge ban failed for user {target.id} in chat {chat.id}: {e}")
+    else:
         # ban ไม่ผ่าน → fallback restrict (mute) แทน
-        try:
-            await context.bot.restrict_chat_member(
+        restrict_ok, _ = await run_critical_action(
+            f"/purge restrict user={target.id} chat={chat.id}",
+            lambda: context.bot.restrict_chat_member(
                 chat_id=chat.id,
                 user_id=target.id,
                 permissions=ChatPermissions(can_send_messages=False),
-            )
-        except Exception as e2:
-            logger.warning(f"/purge fallback restrict failed for user {target.id}: {e2}")
+            ),
+        )
 
     # ——— 2) ลบโพสต์ทั้งหมดของ user คนนี้ย้อนหลัง ———
     # reply โพสต์เดียว → ลบทุกโพสต์ของ user คนนั้น (ที่อยู่ในกรอบ 48 ชม.)
@@ -1352,17 +1682,26 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # ลบคำสั่ง /purge ของ admin
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    await delete_message_critical(
+        message,
+        f"delete /purge command chat={chat.id}",
+        retries=0,
+    )
 
     # ——— 3) รายงานผล ———
-    if deleted > 0:
+    if ban_ok and deleted > 0:
         action_text = f"🚫 BAN + ลบโพสต์ทั้งหมด {deleted} ข้อความ"
     elif ban_ok:
         action_text = ("🚫 BAN สำเร็จ — แต่ลบข้อความไม่ได้ "
                        "(อาจเก่ากว่า 48 ชม. หรือถูกลบไปแล้ว)")
+    elif restrict_ok and deleted > 0:
+        action_text = f"🔇 MUTE ถาวร + ลบโพสต์ทั้งหมด {deleted} ข้อความ"
+    elif restrict_ok:
+        action_text = "🔇 MUTE ถาวรสำเร็จ — แต่ลบข้อความไม่ได้"
+    elif deleted > 0:
+        action_text = (
+            f"⚠️ ลบโพสต์ได้ {deleted} ข้อความ แต่ BAN/MUTE ไม่สำเร็จ"
+        )
     else:
         action_text = "⚠️ ลบ/แบนไม่สำเร็จ — ตรวจสิทธิ์ Delete Messages ของบอท"
 
@@ -1372,6 +1711,13 @@ async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target,
         "Admin ใช้ /purge เพื่อล้างสแปมย้อนหลัง",
         action_text,
+    )
+
+
+async def purge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Manual cleanup has the same priority as automatic moderation.
+    await run_moderation_operation(
+        lambda: _purge_command_impl(update, context)
     )
 
 
@@ -1388,9 +1734,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     last_error_message = repr(error)[:500]
 
     if isinstance(error, RetryAfter):
-        # [STABILITY] Telegram flood control — PTB จะ retry อัตโนมัติ รอแค่ log
-        logger.warning(f"Telegram flood control: retry after {error.retry_after}s")
-        await asyncio.sleep(error.retry_after)
+        delay = retry_after_seconds(error)
+        logger.warning(f"Telegram flood control: retry after {delay:.1f}s")
+        await asyncio.sleep(min(delay, CRITICAL_RETRY_MAX_WAIT))
         return
 
     if isinstance(error, (TimedOut, NetworkError)):
@@ -1417,8 +1763,10 @@ if __name__ == "__main__":
         logger.error("BOT_TOKEN is not set; cannot start Telegram bot.")
         raise SystemExit(1)
 
-    # [STABILITY #1] สร้าง semaphore ใน main thread ก่อน event loop เริ่ม
+    # สร้างตัวควบคุมงานก่อนเริ่ม polling; event จะถูกผูกกับ loop เมื่อใช้งาน
     _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    _moderation_idle_event = asyncio.Event()
+    _moderation_idle_event.set()
 
     # Flask สำหรับ UptimeRobot ping (daemon thread)
     web_thread = threading.Thread(target=run_web, daemon=True)
@@ -1429,7 +1777,8 @@ if __name__ == "__main__":
     application = (
         ApplicationBuilder()
         .token(TOKEN)
-        .connection_pool_size(16)       # รองรับหลายกลุ่มพร้อมกัน
+        .concurrent_updates(MAX_CONCURRENT)
+        .connection_pool_size(MAX_CONCURRENT + WELCOME_MAX_CONCURRENT + 5)
         .read_timeout(15)               # รอ Telegram ตอบกลับ 15 วินาที
         .write_timeout(15)
         .connect_timeout(15)
@@ -1439,6 +1788,7 @@ if __name__ == "__main__":
 
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
+    application.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_message))
     application.add_handler(CommandHandler("chatid", chatid_command))
     application.add_handler(CommandHandler("purge", purge_command))
     application.add_handler(MessageHandler(filters.ALL, check_message))
