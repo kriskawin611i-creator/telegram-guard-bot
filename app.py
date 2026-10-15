@@ -115,9 +115,11 @@ PORT  = parse_int_env("PORT", 10000)
 
 # Optional production guards:
 # ALLOWED_CHAT_IDS="-100111,-100222"  -> bot only works in these groups
+# ALLOWED_SENDER_CHAT_IDS="-100111,-100222" -> trusted groups/channels may post as sender_chat
 # LEAVE_UNAUTHORIZED_CHATS=true       -> bot leaves groups not in the allowlist
 # DROP_PENDING_UPDATES=false          -> process Telegram backlog on restart
 ALLOWED_CHAT_IDS          = parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS"))
+ALLOWED_SENDER_CHAT_IDS   = parse_chat_ids(os.getenv("ALLOWED_SENDER_CHAT_IDS"))
 OWNER_USER_IDS           = parse_chat_ids(os.getenv("OWNER_USER_IDS"))
 ALLOWED_BOT_USERNAMES    = parse_usernames(os.getenv("ALLOWED_BOT_USERNAMES"))
 LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
@@ -1297,6 +1299,14 @@ async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Messages sent as this group are anonymous-admin messages. External
         # channels are inspected separately so channel spam cannot bypass rules.
         if sender_chat.id == chat_id:
+            return
+        # Telegram may hide the human admin behind a linked group/channel and
+        # expose only sender_chat. Trust only explicitly configured internal
+        # groups/channels; every other external sender_chat remains moderated.
+        if sender_chat.id in ALLOWED_SENDER_CHAT_IDS:
+            logger.info(
+                f"Allowed trusted sender_chat {sender_chat.id} in chat {chat_id}"
+            )
             return
         await run_moderation_operation(
             lambda: process_sender_chat_message(
