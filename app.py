@@ -106,7 +106,17 @@ def parse_welcome_group_links(raw: str | None) -> list[dict]:
             except ValueError:
                 logger.warning(f"Ignoring invalid welcome chat id in item: {item!r}")
 
-        links.append({"title": title, "url": url, "chat_id": chat_id})
+        sex = None
+        if len(parts) >= 4 and parts[3]:
+            normalized_sex = parts[3].lower()
+            if normalized_sex == "male":
+                sex = "Male"
+            elif normalized_sex == "female":
+                sex = "Female"
+            else:
+                logger.warning(f"Ignoring invalid welcome sex in item: {item!r}")
+
+        links.append({"title": title, "url": url, "chat_id": chat_id, "sex": sex})
 
     return links
 
@@ -133,39 +143,64 @@ DEFAULT_WELCOME_TEXT = (
 )
 
 DEFAULT_WELCOME_GROUP_LINKS = [
-    {"title": "วาร์ปxีรีเทิร์น", "url": "https://t.me/+c0BvcQliwLg1ODY1", "chat_id": -1004291436088},
-    {"title": "นักล่าxี", "url": "https://t.me/+6-9URc7-fGxiZGY1", "chat_id": -1003957812190},
-    {"title": "ดoนxีบิน", "url": "https://t.me/+t9fiV42gGXVkMDU1", "chat_id": -1004272453579},
-    {"title": "อัศวินโต๊ะกลม", "url": "https://t.me/+YhaQ5nEkDe1mOWE1", "chat_id": -1004347482362},
-    {"title": "อัศวินโต๊ะหมี", "url": "https://t.me/+aHZjKajBxlJkNTY1", "chat_id": -1004343764829},
-    {"title": "อัศวินโต้ะส้ม", "url": "https://t.me/+JJHSILN2jPJlZjY1", "chat_id": -1004354431499},
-    {"title": "ถ้ำหมี", "url": "https://t.me/+WeYXLsfg24c5YmVl", "chat_id": -1003865858642},
-    {"title": "xีพาหลอน", "url": "https://t.me/+o3i__Vseq_BmZTQ1", "chat_id": -1004451470486},
-    {"title": "av นานาชาติ", "url": "https://t.me/avshongmhee", "chat_id": -1003771094654},
-    {"title": "ส่องหมี", "url": "https://t.me/shongmheeav", "chat_id": -1003854594118},
-    {"title": "นั่งกระดอ", "url": "https://t.me/+iEsjL4Lv-sJkMjA1", "chat_id": -1004440859880},
-    {"title": "โหนกระดอ", "url": "https://t.me/+Tirl3g9R0ZoxMjll", "chat_id": -1003732267246},
-    {"title": "คนตื่นหรรม", "url": "https://t.me/+P3cwAfy2ZBw5NTdl", "chat_id": -1004446325944},
-    {"title": "ซดน้ำกาม", "url": "https://t.me/Sodnamkam", "chat_id": -1003896586263},
-    {"title": "กระดอซิ่ง", "url": "https://t.me/+64Rly-JlTGJiNGFl", "chat_id": -1004207502951},
-    {"title": "แก๊งระเบิดตูด", "url": "https://t.me/+ICkHBTdE1RtjMTY9", "chat_id": -1003995563111},
-    {"title": "จุดระเบิดหี", "url": "https://t.me/+0j0apdY7YIZhMThl", "chat_id": -1004390299584},
-    {"title": "หีระเบิด", "url": "https://t.me/heerabeurt", "chat_id": -1003903122010},
-    {"title": "ล่านม", "url": "https://t.me/+1ZytXlpYxQYwNjg1", "chat_id": -1004419231533},
-    {"title": "รหัสพาเพลิน", "url": "https://t.me/+mZkrvg6X7qI3ZmNl", "chat_id": -1004331569003},
-    {"title": "ดูบอล4K", "url": "https://t.me/+ZiDarzoIddowMGY1", "chat_id": -1004438898032},
-    {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578},
-    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1001880394930},
-    {"title": "คนคลั่งxี", "url": "https://t.me/klangheev1", "chat_id": -1004375248238},
-    {"title": "จุดกางแตด", "url": "https://t.me/judkangtadd", "chat_id": -1004375050476},
-    {"title": "รวมพลคนบ้าxี", "url": "https://t.me/baheev1", "chat_id": -1004362852597},
-    {"title": "ช่วงเวลาวัยหนุ่ม", "url": "https://t.me/+l1791fWv_ZgwZDdl", "chat_id": -1003913348963},
-    {"title": "เหนียวมือครับ", "url": "https://t.me/+tx0yOG32-MVmNzFl", "chat_id": -1004499308589},
-    {"title": "เขื่อนจะแตก", "url": "https://t.me/+9nE4WdvB6FkyNjU1", "chat_id": -1003979538788},
-    {"title": "แหกกี", "url": "https://t.me/+t18FldNmBJRiZWY1", "chat_id": -1004381935437},
-    {"title": "สำลักน้ำหอย", "url": "https://t.me/+8w5k_3MY0XRhYWU1", "chat_id": -1004420850490},
-    {"title": "ดูดดอ", "url": "https://t.me/+vD_uvtKIf5o0ZTk1", "chat_id": -1003962975835},
-    {"title": "อมเพลิน", "url": "https://t.me/+jzk49s0nKpMxYWRl", "chat_id": -1004497556737},
+    {"title": "จุดระเบิดหี", "url": "https://t.me/+0j0apdY7YIZhMThl", "chat_id": -1004390299584, "sex": "Female"},
+    {"title": "ดูบอล4K", "url": "https://t.me/+ZiDarzoIddowMGY1", "chat_id": -1004438898032, "sex": "Female"},
+    {"title": "ปวดกี", "url": "https://t.me/PuatKei", "chat_id": -1004427675231, "sex": "Female"},
+    {"title": "ปุ่มแตด", "url": "https://t.me/+_jZseU0_OqMwZTFl", "chat_id": -1003953789930, "sex": "Female"},
+    {"title": "รหัสพาเพลิน", "url": "https://t.me/+mZkrvg6X7qI3ZmNl", "chat_id": -1004331569003, "sex": "Female"},
+    {"title": "ล่านม", "url": "https://t.me/+1ZytXlpYxQYwNjg1", "chat_id": -1004419231533, "sex": "Female"},
+    {"title": "สำลักน้ำหอย", "url": "https://t.me/+8w5k_3MY0XRhYWU1", "chat_id": -1004420850490, "sex": "Female"},
+    {"title": "หีระเบิด", "url": "https://t.me/heerabeurt", "chat_id": -1003903122010, "sex": "Female"},
+    {"title": "แหกกี", "url": "https://t.me/+t18FldNmBJRiZWY1", "chat_id": -1004381935437, "sex": "Female"},
+    {"title": "JAVXTH", "url": "https://t.me/JAVXTH", "chat_id": -1004387206395, "sex": "Female"},
+    {"title": "สมาคมคนชอบหี", "url": "https://t.me/+z5mZ079F7_0yZWU1", "chat_id": -1004342285556, "sex": "Female"},
+    {"title": "สาดไปสมาชิก", "url": "https://t.me/+y_oaoz3GB683Njc1", "chat_id": -1004347135959, "sex": "Female"},
+    {"title": "เรื่องของหี", "url": "https://t.me/+0usec-VxEw5kM2E1", "chat_id": -1003964063695, "sex": "Female"},
+    {"title": "กระดอซิ่ง", "url": "https://t.me/+64Rly-JlTGJiNGFl", "chat_id": -1004207502951, "sex": "Male"},
+    {"title": "แก๊งระเบิดตูด", "url": "https://t.me/+ICkHBTdE1RtjMTY9", "chat_id": -1003995563111, "sex": "Male"},
+    {"title": "คนตื่นหรรม", "url": "https://t.me/+P3cwAfy2ZBw5NTdl", "chat_id": -1004446325944, "sex": "Male"},
+    {"title": "ซดน้ำกาม", "url": "https://t.me/Sodnamkam", "chat_id": -1003896586263, "sex": "Male"},
+    {"title": "ดูดดอ", "url": "https://t.me/+vD_uvtKIf5o0ZTk1", "chat_id": -1003962975835, "sex": "Male"},
+    {"title": "นั่งกระดอ", "url": "https://t.me/+iEsjL4Lv-sJkMjA1", "chat_id": -1004440859880, "sex": "Male"},
+    {"title": "โหนกระดอ", "url": "https://t.me/+Tirl3g9R0ZoxMjll", "chat_id": -1003732267246, "sex": "Male"},
+    {"title": "อมเพลิน", "url": "https://t.me/+jzk49s0nKpMxYWRl", "chat_id": -1004497556737, "sex": "Male"},
+    {"title": "อัศวินโต๊ะกลม", "url": "https://t.me/+YhaQ5nEkDe1mOWE1", "chat_id": -1004347482362, "sex": "Female"},
+    {"title": "อัศวินโต้ะส้ม", "url": "https://t.me/+JJHSILN2jPJlZjY1", "chat_id": -1004354431499, "sex": "Female"},
+    {"title": "อัศวินโต๊ะหมี", "url": "https://t.me/+aHZjKajBxlJkNTY1", "chat_id": -1004343764829, "sex": "Female"},
+    {"title": "รักษาxี", "url": "https://t.me/+IkpgFxolriU0ZTM1", "chat_id": -1004303453836, "sex": "Female"},
+    {"title": "ศาลาพักควx", "url": "https://t.me/+X5vxtODrQSM2Yjk1", "chat_id": -1004448563805, "sex": "Female"},
+    {"title": "คลิปหรรษา", "url": "https://t.me/+8ST4DjJ4_lRiYTQ1", "chat_id": -1004458793062, "sex": "Female"},
+    {"title": "ควxเพื่อนxี", "url": "https://t.me/+OaY34hglMbZkZDE1", "chat_id": -1004450739951, "sex": "Female"},
+    {"title": "กลิ่นดีที่xี", "url": "https://t.me/+kyWiidOVNpUwMzM1", "chat_id": -1004304758102, "sex": "Female"},
+    {"title": "xีดีที่นี้", "url": "https://t.me/+8Wn_BZ2vBso4YmY9", "chat_id": -1004296876048, "sex": "Female"},
+    {"title": "กลุ่มดูดxี", "url": "https://t.me/doodmheev1", "chat_id": -1004371195122, "sex": "Female"},
+    {"title": "คนคลั่งxี", "url": "https://t.me/klangheev1", "chat_id": -1004375248238, "sex": "Female"},
+    {"title": "จุดกางแตด", "url": "https://t.me/judkangtadd", "chat_id": -1004375050476, "sex": "Female"},
+    {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578, "sex": "Female"},
+    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1001880394930, "sex": "Female"},
+    {"title": "ถ้ำหมี", "url": "https://t.me/+WeYXLsfg24c5YmVl", "chat_id": -1003865858642, "sex": "Female"},
+    {"title": "ถ้ำxีระเบิด", "url": "https://t.me/+VdnlHkxPUkAzYjU1", "chat_id": -1003990789699, "sex": "Female"},
+    {"title": "รวมพลคนบ้าxี", "url": "https://t.me/baheev1", "chat_id": -1004362852597, "sex": "Female"},
+    {"title": "ส่องหมี", "url": "https://t.me/shongmheeav", "chat_id": -1003854594118, "sex": "Female"},
+    {"title": "หนังชมพูพาวทัวร์", "url": "https://t.me/+uSukf44DUmJiMTA1", "chat_id": -1004361620745, "sex": "Female"},
+    {"title": "av นานาชาติ", "url": "https://t.me/avshongmhee", "chat_id": -1003771094654, "sex": "Female"},
+    {"title": "xีพาหลอน", "url": "https://t.me/+o3i__Vseq_BmZTQ1", "chat_id": -1004451470486, "sex": "Female"},
+    {"title": "xีฟรีมีให้ดู", "url": "https://t.me/+ekNGZZ0jxiY5MTY1", "chat_id": -1004445162475, "sex": "Female"},
+    {"title": "หลวงพ่อโต V3", "url": "https://t.me/+ygBNsfWZhrszOWQ9", "chat_id": -1003750183920, "sex": "Female"},
+    {"title": "หลวงพ่อโต V2", "url": "https://t.me/+FJreLFsYRGczYWE9", "chat_id": -1003964195315, "sex": "Female"},
+    {"title": "หลวงพ่อโต V1", "url": "https://t.me/+UKpA_MFYjeYxYWU1", "chat_id": -1003964261161, "sex": "Female"},
+    {"title": "เขื่อนจะแตก", "url": "https://t.me/+9nE4WdvB6FkyNjU1", "chat_id": -1003979538788, "sex": "Female"},
+    {"title": "ช่วงเวลาวัยหนุ่ม", "url": "https://t.me/+l1791fWv_ZgwZDdl", "chat_id": -1003913348963, "sex": "Female"},
+    {"title": "ดoนxีบิน", "url": "https://t.me/+t9fiV42gGXVkMDU1", "chat_id": -1004272453579, "sex": "Female"},
+    {"title": "นักล่าxี", "url": "https://t.me/+6-9URc7-fGxiZGY1", "chat_id": -1003957812190, "sex": "Female"},
+    {"title": "วาร์ปxีรีเทิร์น", "url": "https://t.me/+c0BvcQliwLg1ODY1", "chat_id": -1004291436088, "sex": "Female"},
+    {"title": "เหนียวมือครับ", "url": "https://t.me/+tx0yOG32-MVmNzFl", "chat_id": -1004499308589, "sex": "Female"},
+    {"title": "ทิชชู่หมดม้วน", "url": "https://t.me/+5UL4fiTEalYyZjg1", "chat_id": -1003979381617, "sex": "Female"},
+    {"title": "ราตรีนี้มีวาร์ป", "url": "https://t.me/+fbFoUa7rya4yNDk1", "chat_id": -1004298274076, "sex": "Female"},
+    {"title": "ตาค้างยันหว่าง", "url": "https://t.me/+CnTECVkSUrM1NzVl", "chat_id": -1004423991150, "sex": "Female"},
+    {"title": "ทีเด็ดแดนลับ", "url": "https://t.me/+OxFEmH9dibk2Mzk1", "chat_id": -1004414997183, "sex": "Female"},
+    {"title": "ซอยตันมันหยด", "url": "https://t.me/+rOvgV2YYqpQ4NzU1", "chat_id": -1004363237865, "sex": "Female"},
+    {"title": "ถ้ำนี้หมีดุ", "url": "https://t.me/+a6SWU4_21EJhYjU1", "chat_id": -1004363883271, "sex": "Female"},
 ]
 
 WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
@@ -634,7 +669,36 @@ def build_welcome_keyboard(chat_id: int) -> InlineKeyboardMarkup | None:
         return None
 
     count = min(WELCOME_BUTTON_COUNT, len(available_links))
-    selected_links = random.sample(available_links, count)
+    pools = {
+        "Female": [
+            item for item in available_links
+            if str(item.get("sex") or "").lower() == "female"
+        ],
+        "Male": [
+            item for item in available_links
+            if str(item.get("sex") or "").lower() == "male"
+        ],
+    }
+    uncategorized = [
+        item for item in available_links
+        if str(item.get("sex") or "").lower() not in {"female", "male"}
+    ]
+
+    for pool in (*pools.values(), uncategorized):
+        random.shuffle(pool)
+
+    first_sex = random.choice(("Female", "Male"))
+    second_sex = "Male" if first_sex == "Female" else "Female"
+    selected_links: list[dict] = []
+
+    for index in range(count):
+        desired_sex = first_sex if index % 2 == 0 else second_sex
+        fallback_sex = second_sex if desired_sex == first_sex else first_sex
+        for pool in (pools[desired_sex], pools[fallback_sex], uncategorized):
+            if pool:
+                selected_links.append(pool.pop())
+                break
+
     rows = []
 
     for index in range(0, len(selected_links), WELCOME_BUTTONS_PER_ROW):
