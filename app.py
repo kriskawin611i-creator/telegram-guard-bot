@@ -136,72 +136,27 @@ LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
 DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", False)
 ALLOWED_UPDATE_TYPES     = ["message", "edited_message", "chat_member"]
 
+# ========================================================
+# [COMPREHENSIVE ANTI-SPAM GUARDS] นโยบายป้องกันสแปมแบบครบวงจร
+# สกัดกั้นทุกเทคนิคการหลบเลี่ยง (Checklist, Poll, Contact, Venue, Invoice, Game, Inline Bot)
+# ========================================================
+BLOCK_ALL_CHECKLISTS     = parse_bool_env("BLOCK_ALL_CHECKLISTS", True)
+BLOCK_ALL_POLLS          = parse_bool_env("BLOCK_ALL_POLLS", False)
+BLOCK_ALL_CONTACTS       = parse_bool_env("BLOCK_ALL_CONTACTS", True)
+BLOCK_ALL_VENUES         = parse_bool_env("BLOCK_ALL_VENUES", True)
+BLOCK_ALL_INVOICES       = parse_bool_env("BLOCK_ALL_INVOICES", True)
+BLOCK_ALL_GAMES          = parse_bool_env("BLOCK_ALL_GAMES", True)
+BLOCK_ALL_VIA_BOT        = parse_bool_env("BLOCK_ALL_VIA_BOT", True)
+BLOCK_ALL_PAID_MEDIA     = parse_bool_env("BLOCK_ALL_PAID_MEDIA", True)
+
+# ข้อความต้อนรับค่าเริ่มต้น (ปรับให้สุภาพและไม่ผูกกับปุ่มลิงก์ที่ถูกนำออก)
 DEFAULT_WELCOME_TEXT = (
     "ยินดีต้อนรับ {name} เข้าสู่กลุ่ม\n\n"
-    "กลุ่มนี้เข้าฟรี ไม่มีค่าใช้จ่าย\n"
-    "สามารถเลือกเข้ากลุ่มอื่นในเครือได้จากปุ่มด้านล่าง"
+    "กลุ่มนี้เข้าฟรี ไม่มีค่าใช้จ่าย ยินดีต้อนรับทุกคนครับ"
 )
 
-DEFAULT_WELCOME_GROUP_LINKS = [
-    {"title": "จุดระเบิดหี", "url": "https://t.me/+0j0apdY7YIZhMThl", "chat_id": -1004390299584, "sex": "Female"},
-    {"title": "ดูบอล4K", "url": "https://t.me/+ZiDarzoIddowMGY1", "chat_id": -1004438898032, "sex": "Female"},
-    {"title": "ปวดกี", "url": "https://t.me/PuatKei", "chat_id": -1004427675231, "sex": "Female"},
-    {"title": "ปุ่มแตด", "url": "https://t.me/+_jZseU0_OqMwZTFl", "chat_id": -1003953789930, "sex": "Female"},
-    {"title": "รหัสพาเพลิน", "url": "https://t.me/+mZkrvg6X7qI3ZmNl", "chat_id": -1004331569003, "sex": "Female"},
-    {"title": "ล่านม", "url": "https://t.me/+1ZytXlpYxQYwNjg1", "chat_id": -1004419231533, "sex": "Female"},
-    {"title": "สำลักน้ำหอย", "url": "https://t.me/+8w5k_3MY0XRhYWU1", "chat_id": -1004420850490, "sex": "Female"},
-    {"title": "หีระเบิด", "url": "https://t.me/heerabeurt", "chat_id": -1003903122010, "sex": "Female"},
-    {"title": "แหกกี", "url": "https://t.me/+t18FldNmBJRiZWY1", "chat_id": -1004381935437, "sex": "Female"},
-    {"title": "JAVXTH", "url": "https://t.me/JAVXTH", "chat_id": -1004387206395, "sex": "Female"},
-    {"title": "สมาคมคนชอบหี", "url": "https://t.me/+z5mZ079F7_0yZWU1", "chat_id": -1004342285556, "sex": "Female"},
-    {"title": "สาดไปสมาชิก", "url": "https://t.me/+y_oaoz3GB683Njc1", "chat_id": -1004347135959, "sex": "Female"},
-    {"title": "เรื่องของหี", "url": "https://t.me/+0usec-VxEw5kM2E1", "chat_id": -1003964063695, "sex": "Female"},
-    {"title": "กระดอซิ่ง", "url": "https://t.me/+64Rly-JlTGJiNGFl", "chat_id": -1004207502951, "sex": "Male"},
-    {"title": "แก๊งระเบิดตูด", "url": "https://t.me/+ICkHBTdE1RtjMTY9", "chat_id": -1003995563111, "sex": "Male"},
-    {"title": "คนตื่นหรรม", "url": "https://t.me/+P3cwAfy2ZBw5NTdl", "chat_id": -1004446325944, "sex": "Male"},
-    {"title": "ซดน้ำกาม", "url": "https://t.me/Sodnamkam", "chat_id": -1003896586263, "sex": "Male"},
-    {"title": "ดูดดอ", "url": "https://t.me/+vD_uvtKIf5o0ZTk1", "chat_id": -1003962975835, "sex": "Male"},
-    {"title": "นั่งกระดอ", "url": "https://t.me/+iEsjL4Lv-sJkMjA1", "chat_id": -1004440859880, "sex": "Male"},
-    {"title": "โหนกระดอ", "url": "https://t.me/+Tirl3g9R0ZoxMjll", "chat_id": -1003732267246, "sex": "Male"},
-    {"title": "อมเพลิน", "url": "https://t.me/+jzk49s0nKpMxYWRl", "chat_id": -1004497556737, "sex": "Male"},
-    {"title": "อัศวินโต๊ะกลม", "url": "https://t.me/+YhaQ5nEkDe1mOWE1", "chat_id": -1004347482362, "sex": "Female"},
-    {"title": "อัศวินโต้ะส้ม", "url": "https://t.me/+JJHSILN2jPJlZjY1", "chat_id": -1004354431499, "sex": "Female"},
-    {"title": "อัศวินโต๊ะหมี", "url": "https://t.me/+aHZjKajBxlJkNTY1", "chat_id": -1004343764829, "sex": "Female"},
-    {"title": "รักษาxี", "url": "https://t.me/+IkpgFxolriU0ZTM1", "chat_id": -1004303453836, "sex": "Female"},
-    {"title": "ศาลาพักควx", "url": "https://t.me/+X5vxtODrQSM2Yjk1", "chat_id": -1004448563805, "sex": "Female"},
-    {"title": "คลิปหรรษา", "url": "https://t.me/+8ST4DjJ4_lRiYTQ1", "chat_id": -1004458793062, "sex": "Female"},
-    {"title": "ควxเพื่อนxี", "url": "https://t.me/+OaY34hglMbZkZDE1", "chat_id": -1004450739951, "sex": "Female"},
-    {"title": "กลิ่นดีที่xี", "url": "https://t.me/+kyWiidOVNpUwMzM1", "chat_id": -1004304758102, "sex": "Female"},
-    {"title": "xีดีที่นี้", "url": "https://t.me/+8Wn_BZ2vBso4YmY9", "chat_id": -1004296876048, "sex": "Female"},
-    {"title": "กลุ่มดูดxี", "url": "https://t.me/doodmheev1", "chat_id": -1004371195122, "sex": "Female"},
-    {"title": "คนคลั่งxี", "url": "https://t.me/klangheev1", "chat_id": -1004375248238, "sex": "Female"},
-    {"title": "จุดกางแตด", "url": "https://t.me/judkangtadd", "chat_id": -1004375050476, "sex": "Female"},
-    {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578, "sex": "Female"},
-    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1001880394930, "sex": "Female"},
-    {"title": "ถ้ำหมี", "url": "https://t.me/+WeYXLsfg24c5YmVl", "chat_id": -1003865858642, "sex": "Female"},
-    {"title": "ถ้ำxีระเบิด", "url": "https://t.me/+VdnlHkxPUkAzYjU1", "chat_id": -1003990789699, "sex": "Female"},
-    {"title": "รวมพลคนบ้าxี", "url": "https://t.me/baheev1", "chat_id": -1004362852597, "sex": "Female"},
-    {"title": "ส่องหมี", "url": "https://t.me/shongmheeav", "chat_id": -1003854594118, "sex": "Female"},
-    {"title": "หนังชมพูพาวทัวร์", "url": "https://t.me/+uSukf44DUmJiMTA1", "chat_id": -1004361620745, "sex": "Female"},
-    {"title": "av นานาชาติ", "url": "https://t.me/avshongmhee", "chat_id": -1003771094654, "sex": "Female"},
-    {"title": "xีพาหลอน", "url": "https://t.me/+o3i__Vseq_BmZTQ1", "chat_id": -1004451470486, "sex": "Female"},
-    {"title": "xีฟรีมีให้ดู", "url": "https://t.me/+ekNGZZ0jxiY5MTY1", "chat_id": -1004445162475, "sex": "Female"},
-    {"title": "หลวงพ่อโต V3", "url": "https://t.me/+ygBNsfWZhrszOWQ9", "chat_id": -1003750183920, "sex": "Female"},
-    {"title": "หลวงพ่อโต V2", "url": "https://t.me/+FJreLFsYRGczYWE9", "chat_id": -1003964195315, "sex": "Female"},
-    {"title": "หลวงพ่อโต V1", "url": "https://t.me/+UKpA_MFYjeYxYWU1", "chat_id": -1003964261161, "sex": "Female"},
-    {"title": "เขื่อนจะแตก", "url": "https://t.me/+9nE4WdvB6FkyNjU1", "chat_id": -1003979538788, "sex": "Female"},
-    {"title": "ช่วงเวลาวัยหนุ่ม", "url": "https://t.me/+l1791fWv_ZgwZDdl", "chat_id": -1003913348963, "sex": "Female"},
-    {"title": "ดoนxีบิน", "url": "https://t.me/+t9fiV42gGXVkMDU1", "chat_id": -1004272453579, "sex": "Female"},
-    {"title": "นักล่าxี", "url": "https://t.me/+6-9URc7-fGxiZGY1", "chat_id": -1003957812190, "sex": "Female"},
-    {"title": "วาร์ปxีรีเทิร์น", "url": "https://t.me/+c0BvcQliwLg1ODY1", "chat_id": -1004291436088, "sex": "Female"},
-    {"title": "เหนียวมือครับ", "url": "https://t.me/+tx0yOG32-MVmNzFl", "chat_id": -1004499308589, "sex": "Female"},
-    {"title": "ทิชชู่หมดม้วน", "url": "https://t.me/+5UL4fiTEalYyZjg1", "chat_id": -1003979381617, "sex": "Female"},
-    {"title": "ราตรีนี้มีวาร์ป", "url": "https://t.me/+fbFoUa7rya4yNDk1", "chat_id": -1004298274076, "sex": "Female"},
-    {"title": "ตาค้างยันหว่าง", "url": "https://t.me/+CnTECVkSUrM1NzVl", "chat_id": -1004423991150, "sex": "Female"},
-    {"title": "ทีเด็ดแดนลับ", "url": "https://t.me/+OxFEmH9dibk2Mzk1", "chat_id": -1004414997183, "sex": "Female"},
-    {"title": "ซอยตันมันหยด", "url": "https://t.me/+rOvgV2YYqpQ4NzU1", "chat_id": -1004363237865, "sex": "Female"},
-    {"title": "ถ้ำนี้หมีดุ", "url": "https://t.me/+a6SWU4_21EJhYjU1", "chat_id": -1004363883271, "sex": "Female"},
-]
+# นำรายชื่อลิงก์กลุ่มทั้ง 58 กลุ่มออกตามคำขอ (สามารถเพิ่มใหม่ผ่าน Environment Variable: WELCOME_GROUP_LINKS ได้)
+DEFAULT_WELCOME_GROUP_LINKS: list[dict] = []
 
 WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
 WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 4))
@@ -871,7 +826,7 @@ async def run_welcome_queue(application, bot, chat_id: int) -> None:
             )
 
 def queue_welcome_message(message, chat, members, context) -> None:
-    if not WELCOME_ENABLED or not WELCOME_GROUP_LINKS:
+    if not WELCOME_ENABLED:
         return
 
     human_members = [member for member in members if not getattr(member, "is_bot", False)]
@@ -891,17 +846,25 @@ def queue_welcome_message(message, chat, members, context) -> None:
 
     welcome_tasks[chat.id] = context.application.create_task(
         run_welcome_queue(context.application, context.bot, chat.id),
-        name=f"welcome-{chat.id}",
+        name=f"welcome-{chat_id}",
     )
 
 # =============================
-# ALERT SYSTEM
+# ALERT SYSTEM (พร้อมรองรับ Forum Topic)
 # =============================
 
-async def alert_action(context, chat_id: int, user, reason: str, action: str):
+async def alert_action(
+    context,
+    chat_id: int,
+    user,
+    reason: str,
+    action: str,
+    thread_id: int | None = None,
+):
     """
     ส่ง alert แต่ข้าม user ที่เพิ่งถูก alert ไปใน 60 วินาที
     กันบอทส่ง alert ท่วม group เวลาโดน spam หนัก
+    พร้อมรองรับ Forum Topic (thread_id) และมี fallback ส่งเข้าห้องหลัก
     """
     if user:
         now  = time.time()
@@ -911,25 +874,39 @@ async def alert_action(context, chat_id: int, user, reason: str, action: str):
             return  # ไม่ alert ซ้ำ
         user_last_alert[key] = now
 
+    name = user.mention_html() if user else "Unknown"
+    text = (
+        f"🚫 GUARD BOT\n\n"
+        f"ตรวจพบการกระทำต้องสงสัย\n\n"
+        f"ผู้ใช้: {name}\n"
+        f"เหตุผล: {reason}\n\n"
+        f"การดำเนินการ: {action}\n\n"
+        f"ระบบป้องกันกลุ่มทำงานอัตโนมัติ"
+    )
+
+    send_kwargs = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if thread_id:
+        send_kwargs["message_thread_id"] = thread_id
+
     try:
-        name = user.mention_html() if user else "Unknown"
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"🚫 GUARD BOT\n\n"
-                f"ตรวจพบการกระทำต้องสงสัย\n\n"
-                f"ผู้ใช้: {name}\n"
-                f"เหตุผล: {reason}\n\n"
-                f"การดำเนินการ: {action}\n\n"
-                f"ระบบป้องกันกลุ่มทำงานอัตโนมัติ"
-            ),
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
+        await context.bot.send_message(**send_kwargs)
+    except Exception as e:
+        # Fallback: หากส่งใน topic ไม่ผ่าน (เช่น topic ถูกปิด/ลบ) ให้ลองส่งเข้าห้องหลัก
+        if thread_id:
+            send_kwargs.pop("message_thread_id", None)
+            try:
+                await context.bot.send_message(**send_kwargs)
+            except Exception as e2:
+                logger.warning(f"Failed fallback alert in chat {chat_id}: {e2}")
+        else:
+            logger.warning(f"Failed to send alert in chat {chat_id}: {e}")
 
 # =============================
-# SETTINGS
+# SETTINGS & PATTERNS
 # =============================
 
 SUSPICIOUS_WORDS_TH = [
@@ -953,10 +930,12 @@ SUSPICIOUS_WORDS_EN = [
     "http", "https", "www", "telegram",
 ]
 
+# ดักจับลิงก์แบบครอบคลุม: ทั้ง web url, protocol tg://, startapp, startgroup, shorteners, และโดเมนยอดนิยม
 LINK_PATTERNS = [
     r"http[s]?://",
     r"hxxp[s]?://",
     r"www\.",
+    r"tg://",
     r"t\.me/",
     r"telegram\.me/",
     r"telegram\.dog/",
@@ -1009,6 +988,210 @@ ALLOWED_DOMAINS = {
 }
 
 # =============================
+# UNIVERSAL CONTENT EXTRACTOR (รองรับ Checklist, Poll, Contact, Venue, Invoice, Game, Quote)
+# =============================
+
+def extract_all_message_text(message) -> str:
+    """
+    ดึงข้อความทั้งหมดอย่างครบวงจร:
+    1) ข้อความปกติ (message.text)
+    2) แคปชั่นรูปภาพ/วิดีโอ (message.caption)
+    3) Telegram Checklist (title และ tasks ทั้งหมด)
+    4) Telegram Poll (question และ options ทั้งหมด)
+    5) Contact Cards (first_name, last_name, phone_number, vcard)
+    6) Venue & Location (title, address)
+    7) Invoice & Payments (title, description)
+    8) HTML5 Game (title, description)
+    9) Message Quotes (message.quote.text)
+    10) Web app data
+    รองรับทั้ง Python Telegram Bot Object และดิบ JSON จาก api_kwargs
+    """
+    parts: list[str] = []
+
+    # 1. ข้อความทั่วไป และ Caption
+    if getattr(message, "text", None):
+        parts.append(message.text)
+    if getattr(message, "caption", None):
+        parts.append(message.caption)
+
+    # 2. Telegram Checklist (Bot API 9.1+)
+    checklist = getattr(message, "checklist", None)
+    if not checklist and hasattr(message, "api_kwargs") and message.api_kwargs:
+        checklist = message.api_kwargs.get("checklist")
+
+    if checklist:
+        if isinstance(checklist, dict):
+            title = checklist.get("title")
+            if title:
+                parts.append(str(title))
+            for task in checklist.get("tasks", []):
+                if isinstance(task, dict):
+                    t_text = task.get("text")
+                    if t_text:
+                        parts.append(str(t_text))
+                elif hasattr(task, "text") and task.text:
+                    parts.append(str(task.text))
+        else:
+            title = getattr(checklist, "title", None)
+            if title:
+                parts.append(str(title))
+            tasks = getattr(checklist, "tasks", None) or []
+            for task in tasks:
+                t_text = (
+                    getattr(task, "text", None)
+                    if hasattr(task, "text")
+                    else task.get("text")
+                    if isinstance(task, dict)
+                    else None
+                )
+                if t_text:
+                    parts.append(str(t_text))
+
+    # 3. Telegram Poll
+    poll = getattr(message, "poll", None)
+    if not poll and hasattr(message, "api_kwargs") and message.api_kwargs:
+        poll = message.api_kwargs.get("poll")
+
+    if poll:
+        if isinstance(poll, dict):
+            q = poll.get("question")
+            if q:
+                parts.append(str(q))
+            for opt in poll.get("options", []):
+                if isinstance(opt, dict):
+                    o_text = opt.get("text")
+                    if o_text:
+                        parts.append(str(o_text))
+                elif hasattr(opt, "text") and opt.text:
+                    parts.append(str(opt.text))
+        else:
+            q = getattr(poll, "question", None)
+            if q:
+                parts.append(str(q))
+            options = getattr(poll, "options", None) or []
+            for opt in options:
+                o_text = (
+                    getattr(opt, "text", None)
+                    if hasattr(opt, "text")
+                    else opt.get("text")
+                    if isinstance(opt, dict)
+                    else None
+                )
+                if o_text:
+                    parts.append(str(o_text))
+
+    # 4. Contact Cards (สกัดชื่อ นามสกุล เบอร์โทรศัพท์ และ vcard)
+    contact = getattr(message, "contact", None)
+    if contact:
+        for attr in ("first_name", "last_name", "phone_number", "vcard"):
+            val = getattr(contact, attr, None)
+            if val:
+                parts.append(str(val))
+
+    # 5. Venue (สกัดชื่อสถานที่และที่อยู่)
+    venue = getattr(message, "venue", None)
+    if venue:
+        for attr in ("title", "address"):
+            val = getattr(venue, attr, None)
+            if val:
+                parts.append(str(val))
+
+    # 6. Invoice (สกัดชื่อและรายละเอียดใบแจ้งหนี้)
+    invoice = getattr(message, "invoice", None)
+    if invoice:
+        for attr in ("title", "description"):
+            val = getattr(invoice, attr, None)
+            if val:
+                parts.append(str(val))
+
+    # 7. Game (สกัดชื่อและคำอธิบายเกม)
+    game = getattr(message, "game", None)
+    if game:
+        for attr in ("title", "description"):
+            val = getattr(game, attr, None)
+            if val:
+                parts.append(str(val))
+
+    # 8. Quote (สกัดข้อความในก้อน Quote Reply)
+    quote = getattr(message, "quote", None)
+    if quote:
+        q_text = getattr(quote, "text", None)
+        if q_text:
+            parts.append(str(q_text))
+
+    # 9. Web App Data
+    web_app_data = getattr(message, "web_app_data", None)
+    if web_app_data:
+        data_text = getattr(web_app_data, "data", None)
+        if data_text:
+            parts.append(str(data_text))
+
+    return " ".join(parts).strip()
+
+
+def extract_all_entities(message) -> list:
+    """ดึง Message Entities ทั้งหมด ทั้งจาก text, caption, checklist tasks, poll และ quote"""
+    entities = list(getattr(message, "entities", None) or [])
+    entities += list(getattr(message, "caption_entities", None) or [])
+
+    # Checklist Entities
+    checklist = getattr(message, "checklist", None)
+    if not checklist and hasattr(message, "api_kwargs") and message.api_kwargs:
+        checklist = message.api_kwargs.get("checklist")
+
+    if checklist:
+        if isinstance(checklist, dict):
+            entities.extend(checklist.get("title_entities", []) or [])
+            for task in checklist.get("tasks", []):
+                if isinstance(task, dict):
+                    entities.extend(task.get("text_entities", []) or [])
+        else:
+            entities.extend(getattr(checklist, "title_entities", None) or [])
+            for task in getattr(checklist, "tasks", None) or []:
+                if hasattr(task, "text_entities") and task.text_entities:
+                    entities.extend(task.text_entities)
+                elif isinstance(task, dict):
+                    entities.extend(task.get("text_entities", []) or [])
+
+    # Poll Entities
+    poll = getattr(message, "poll", None)
+    if not poll and hasattr(message, "api_kwargs") and message.api_kwargs:
+        poll = message.api_kwargs.get("poll")
+
+    if poll:
+        if isinstance(poll, dict):
+            entities.extend(poll.get("question_entities", []) or [])
+            entities.extend(poll.get("explanation_entities", []) or [])
+        else:
+            entities.extend(getattr(poll, "question_entities", None) or [])
+            entities.extend(getattr(poll, "explanation_entities", None) or [])
+
+    # Quote Entities
+    quote = getattr(message, "quote", None)
+    if quote:
+        entities.extend(getattr(quote, "entities", None) or [])
+
+    return entities
+
+
+def is_checklist_message(message) -> bool:
+    """ตรวจสอบว่าเป็นข้อความประเภท Checklist หรือไม่"""
+    if getattr(message, "checklist", None):
+        return True
+    if hasattr(message, "api_kwargs") and message.api_kwargs and "checklist" in message.api_kwargs:
+        return True
+    return False
+
+
+def is_poll_message(message) -> bool:
+    """ตรวจสอบว่าเป็นข้อความประเภท Poll หรือไม่"""
+    if getattr(message, "poll", None):
+        return True
+    if hasattr(message, "api_kwargs") and message.api_kwargs and "poll" in message.api_kwargs:
+        return True
+    return False
+
+# =============================
 # UTIL
 # =============================
 
@@ -1023,7 +1206,7 @@ def compact_link_text(text: str) -> str:
 def extract_urls(text: str) -> list:
     text = normalize_text(text)
     return re.findall(
-        r"(https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)",
+        r"(https?://[^\s]+|www\.[^\s]+|tg://[^\s]+|t\.me/[^\s]+|telegram\.me/[^\s]+)",
         text,
     )
 
@@ -1044,18 +1227,28 @@ def entity_type_name(entity) -> str:
     return str(getattr(entity, "type", "")).lower().rsplit(".", 1)[-1]
 
 def message_has_link(message) -> bool:
-    text = message.text or message.caption or ""
+    """
+    ตรวจจับลิงก์แบบครบวงจร:
+    1) สแกนจากข้อความทั้งหมด (รวม Checklist, Caption, Poll, Contact, Venue)
+    2) สแกนจาก Entities (url, text_link, mention, text_mention, email)
+    3) สแกนจากปุ่มคีย์บอร์ดใต้โพสต์ (inline_keyboard: url, login_url, web_app)
+    """
+    text = extract_all_message_text(message)
     if contains_link(text):
         return True
 
-    entities = list(getattr(message, "entities", None) or [])
-    entities += list(getattr(message, "caption_entities", None) or [])
-
+    entities = extract_all_entities(message)
     for entity in entities:
-        entity_type = entity_type_name(entity)
-        if entity_type in LINK_ENTITY_TYPES:
+        if isinstance(entity, dict):
+            e_type = str(entity.get("type", "")).lower()
+            e_url = entity.get("url")
+        else:
+            e_type = entity_type_name(entity)
+            e_url = getattr(entity, "url", None)
+
+        if e_type in LINK_ENTITY_TYPES:
             return True
-        if getattr(entity, "url", None):
+        if e_url:
             return True
 
     reply_markup = getattr(message, "reply_markup", None)
@@ -1084,9 +1277,7 @@ def contains_bad_word(text: str) -> bool:
     return False
 
 def contains_disallowed_language(text: str) -> bool:
-    """อนุญาตไทย อังกฤษ เลขสากล 0-9 และเลขไทย ๐-๙"""
-    # NFC preserves the original character system. NFKC would turn characters
-    # such as １２３, ², 𝟙 and Ａ into ASCII and incorrectly allow them.
+    """อนุญาตไทย อังกฤษ เลขสากล 0-9 และเลขไทย ๐-๙ บล็อกภาษาและตัวเลขต่างด้าวทั้งหมด"""
     text = unicodedata.normalize("NFC", text or "")
 
     for ch in text:
@@ -1128,8 +1319,20 @@ def contains_disallowed_language(text: str) -> bool:
 
     return False
 
-def contains_suspicious_emoji(text: str) -> bool:
-    return sum(text.count(emoji) for emoji in SUSPICIOUS_EMOJIS) >= EMOJI_THRESHOLD
+def count_custom_emojis(message) -> int:
+    """นับจำนวน Custom Emojis ในข้อความ (ป้องกันสแปมเมอร์ใช้แผงภาพพรีวิวคลิปโป๊)"""
+    count = 0
+    for entity in extract_all_entities(message):
+        e_type = str(entity.get("type", "") if isinstance(entity, dict) else getattr(entity, "type", "")).lower()
+        if "custom_emoji" in e_type:
+            count += 1
+    return count
+
+def contains_suspicious_emoji(message, text: str) -> bool:
+    """ตรวจจับอีโมจิต้องสงสัย ทั้ง Unicode Emojis ปกติ และ Custom Emoji Packs"""
+    standard_count = sum(text.count(emoji) for emoji in SUSPICIOUS_EMOJIS)
+    custom_count = count_custom_emojis(message)
+    return (standard_count + custom_count) >= EMOJI_THRESHOLD
 
 def is_spam(chat_id: int, user_id: int) -> bool:
     now = time.time()
@@ -1167,16 +1370,91 @@ def is_story_share(message) -> bool:
 def is_gift_message(message) -> bool:
     if getattr(message, "gift", None):        return True
     if getattr(message, "unique_gift", None): return True
-    text = message.text or message.caption or ""
+    text = extract_all_message_text(message)
     return bool(re.search(r"(unique collectible|gift from|pepe nft|sending as a gift)", text.lower()))
 
 def forbidden_message_reason(message, text: str) -> str | None:
+    """
+    ตรวจสอบสาเหตุข้อความต้องห้ามอย่างครอบคลุมครบ 20 รูปแบบ:
+    Forward, Story, Gift, Checklist, Poll, Contact, Venue, Invoice, Game, Paid Media, Inline Bot, Link, Bad Word, ภาษา และ Emoji
+    """
     if is_any_forward(message):
         return "Forward ข้อความ (ทุกรูปแบบ)"
     if is_story_share(message):
         return "แชร์ Story"
     if is_gift_message(message):
         return "ส่ง Gift / NFT / Collectible"
+
+    # 1. ตรวจจับ Checklist
+    if is_checklist_message(message):
+        if message_has_link(message):
+            return "ส่ง Checklist ที่มีลิงก์ (ห้ามส่งลิงก์ทุกชนิด)"
+        if contains_bad_word(text):
+            return "ส่ง Checklist ที่มีคำต้องห้าม"
+        if contains_disallowed_language(text):
+            return "ส่ง Checklist ที่มีตัวอักษร/ตัวเลขไม่อนุญาต"
+        if contains_suspicious_emoji(message, text):
+            return f"ส่ง Checklist ที่มี Emoji ต้องสงสัย >= {EMOJI_THRESHOLD} ตัว"
+        if BLOCK_ALL_CHECKLISTS:
+            return "ส่ง Checklist (ไม่อนุญาตให้ใช้ฟีเจอร์นี้ในกลุ่ม)"
+
+    # 2. ตรวจจับ Poll
+    if is_poll_message(message):
+        if message_has_link(message):
+            return "ส่ง Poll ที่มีลิงก์ (ห้ามส่งลิงก์ทุกชนิด)"
+        if contains_bad_word(text):
+            return "ส่ง Poll ที่มีคำต้องห้าม"
+        if BLOCK_ALL_POLLS:
+            return "ส่ง Poll (ไม่อนุญาตให้ใช้โพลในกลุ่ม)"
+
+    # 3. ตรวจจับ Contact Cards
+    if getattr(message, "contact", None):
+        if message_has_link(message):
+            return "ส่ง Contact Card ที่มีลิงก์ (ห้ามส่งลิงก์ทุกชนิด)"
+        if contains_bad_word(text):
+            return "ส่ง Contact Card ที่มีคำต้องห้าม"
+        if BLOCK_ALL_CONTACTS:
+            return "ส่ง Contact Card (ไม่อนุญาตในกลุ่ม)"
+
+    # 4. ตรวจจับ Venue / Location
+    if getattr(message, "venue", None):
+        if message_has_link(message):
+            return "ส่งสถานที่ (Venue) ที่มีลิงก์ (ห้ามส่งลิงก์ทุกชนิด)"
+        if contains_bad_word(text):
+            return "ส่งสถานที่ (Venue) ที่มีคำต้องห้าม"
+        if BLOCK_ALL_VENUES:
+            return "ส่งสถานที่ (Venue) ไม่อนุญาตในกลุ่ม"
+
+    # 5. ตรวจจับ Invoices & Payments
+    if getattr(message, "invoice", None) and BLOCK_ALL_INVOICES:
+        return "ส่ง Invoice / Payment Card (ไม่อนุญาตให้สมาชิกทั่วไปส่ง)"
+
+    # 6. ตรวจจับ Telegram Game
+    if getattr(message, "game", None) and BLOCK_ALL_GAMES:
+        return "ส่ง Game (ไม่อนุญาตให้สมาชิกทั่วไปส่ง)"
+
+    # 7. ตรวจจับ Paid Media (Telegram Stars)
+    if getattr(message, "paid_media", None):
+        if message_has_link(message):
+            return "ส่ง Paid Media ที่มีลิงก์"
+        if contains_bad_word(text):
+            return "ส่ง Paid Media ที่มีคำต้องห้าม"
+        if BLOCK_ALL_PAID_MEDIA:
+            return "ส่ง Paid Media (ไม่อนุญาตในกลุ่ม)"
+
+    # 8. ตรวจจับ Inline Bot (via_bot)
+    via_bot = getattr(message, "via_bot", None)
+    if via_bot:
+        bot_username = (getattr(via_bot, "username", "") or "").lstrip("@").lower()
+        if not bot_username or bot_username not in ALLOWED_BOT_USERNAMES:
+            if message_has_link(message):
+                return f"ส่งข้อความผ่านบอท @{bot_username} ที่มีลิงก์"
+            if contains_bad_word(text):
+                return f"ส่งข้อความผ่านบอท @{bot_username} ที่มีคำต้องห้าม"
+            if BLOCK_ALL_VIA_BOT:
+                return f"ส่งข้อความผ่านบอท @{bot_username} (ไม่อนุญาตให้ใช้บอทภายนอก)"
+
+    # 9. กฎพื้นฐาน: Username, Link, Bad Word, ภาษา และ Emoji
     if re.search(r"@\w+", text):
         return "ส่ง @username"
     if message_has_link(message):
@@ -1185,8 +1463,9 @@ def forbidden_message_reason(message, text: str) -> str | None:
         return "ใช้คำต้องห้าม"
     if contains_disallowed_language(text):
         return "ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต"
-    if contains_suspicious_emoji(text):
+    if contains_suspicious_emoji(message, text):
         return f"ส่ง Emoji ต้องสงสัย >= {EMOJI_THRESHOLD} ตัว"
+
     return None
 
 # =============================
@@ -1232,6 +1511,8 @@ async def _handle_new_members_impl(update: Update, context: ContextTypes.DEFAULT
     new_members = message.new_chat_members or []
     if not new_members:
         return
+
+    thread_id = getattr(message, "message_thread_id", None)
 
     for member in new_members:
         join_times[user_key(chat.id, member.id)] = time.time()
@@ -1308,18 +1589,14 @@ async def _handle_new_members_impl(update: Update, context: ContextTypes.DEFAULT
         action_text = " + ".join(action_parts) if action_parts else "พยายามแบนแล้ว แต่สิทธิ์บอทอาจไม่พอ"
         bot_label = f"@{username}" if username else f"ID: {member.id}"
 
-        try:
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=(
-                    "🚫 GUARD BOT\n\n"
-                    "พบการเพิ่มบอทโดยผู้ใช้ที่ไม่ใช่แอดมิน\n"
-                    f"บอท: {bot_label}\n"
-                    f"การดำเนินการ: {action_text}"
-                )
-            )
-        except Exception:
-            pass
+        await alert_action(
+            context,
+            chat.id,
+            None,
+            "พบการเพิ่มบอทโดยผู้ใช้ที่ไม่ใช่แอดมิน",
+            f"บอท: {bot_label} | การดำเนินการ: {action_text}",
+            thread_id=thread_id,
+        )
 
     cleanup_join_times()
     queue_welcome_message(message, chat, new_members, context)
@@ -1420,10 +1697,12 @@ async def run_moderation_operation(operation) -> None:
 
 async def process_sender_chat_message(message, sender_chat, chat_id: int, context) -> None:
     """Moderate a message posted as an external channel/sender chat."""
-    text = message.text or message.caption or ""
+    text = extract_all_message_text(message)
     reason = forbidden_message_reason(message, text)
     if not reason:
         return
+
+    thread_id = getattr(message, "message_thread_id", None)
 
     deleted = await delete_message_critical(
         message,
@@ -1457,6 +1736,7 @@ async def process_sender_chat_message(message, sender_chat, chat_id: int, contex
         None,
         f"ช่องภายนอก {sender_name}: {reason}",
         action,
+        thread_id=thread_id,
     )
 
 
@@ -1466,7 +1746,9 @@ async def _process_message(message, user, chat_id: int, context):
     ห่อด้วย try/except เพื่อกันไม่ให้ exception ตัวเดียวล่มทั้ง bot
     """
     try:
-        text = message.text or message.caption or ""
+        # สกัดข้อความแบบครบวงจร (รวม Checklist, Caption, Poll, Contact, Venue, Quote)
+        text = extract_all_message_text(message)
+        thread_id = getattr(message, "message_thread_id", None)
 
         # ——— Admin bypass ———
         admin_status = await is_admin_cached(context, chat_id, user.id)
@@ -1542,7 +1824,14 @@ async def _process_message(message, user, chat_id: int, context):
             action = await mute_permanent()
             if not deleted:
                 action += " (ลบข้อความต้นเหตุไม่สำเร็จ)"
-            await alert_action(context, chat_id, user, reason, action)
+            await alert_action(
+                context,
+                chat_id,
+                user,
+                reason,
+                action,
+                thread_id=thread_id,
+            )
 
         # ——— Non-admin bot forbidden content ———
         if getattr(user, "is_bot", False):
@@ -1560,54 +1849,18 @@ async def _process_message(message, user, chat_id: int, context):
             )
             return
 
-        # ——— Forward ———
-        if is_any_forward(message):
-            await enforce_violation("Forward ข้อความ (ทุกรูปแบบ)")
+        # ——— สแกนเงื่อนไขข้อความต้องห้ามครบทุกรูปแบบ ———
+        reason = forbidden_message_reason(message, text)
+        if reason:
+            await enforce_violation(reason)
             return
 
-        # ——— Story ———
-        if is_story_share(message):
-            await enforce_violation("แชร์ Story")
-            return
-
-        # ——— Gift / NFT ———
-        if is_gift_message(message):
-            await enforce_violation("ส่ง Gift / NFT / Collectible")
-            return
-
-        # ——— @username ———
-        if re.search(r"@\w+", text):
-            await enforce_violation("ส่ง @username")
-            return
-
-        # ——— New member link ———
+        # ——— New member link (ตรวจเฉพาะสมาชิกใหม่ช่วง 60 วินาทีแรก) ———
         join_key = user_key(chat_id, user.id)
         if join_key in join_times and time.time() - join_times[join_key] < 60:
             if message_has_link(message):
                 await enforce_violation("สมาชิกใหม่ส่งลิงก์")
                 return
-
-        # ——— Strict link filter ———
-        if message_has_link(message):
-            await enforce_violation("ส่งลิงก์ทุกชนิด")
-            return
-
-        # ——— Bad word ———
-        if contains_bad_word(text):
-            await enforce_violation("ใช้คำต้องห้าม")
-            return
-
-        # ——— Language filter: allow Thai and English only ———
-        if contains_disallowed_language(text):
-            await enforce_violation("ใช้ตัวอักษรหรือตัวเลขที่ไม่อนุญาต")
-            return
-
-        # ——— Suspicious emoji ———
-        if contains_suspicious_emoji(text):
-            await enforce_violation(
-                f"ส่ง Emoji ต้องสงสัย ≥ {EMOJI_THRESHOLD} ตัว"
-            )
-            return
 
         # ——— Spam flood ———
         if (
@@ -1682,6 +1935,7 @@ async def _purge_command_impl(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     mark_update_seen()
 
+    thread_id = getattr(message, "message_thread_id", None)
     sender_chat = getattr(message, "sender_chat", None)
     sender_chat_is_group = bool(sender_chat and sender_chat.id == chat.id)
 
@@ -1785,6 +2039,7 @@ async def _purge_command_impl(update: Update, context: ContextTypes.DEFAULT_TYPE
         target,
         "Admin ใช้ /purge เพื่อล้างสแปมย้อนหลัง",
         action_text,
+        thread_id=thread_id,
     )
 
 
