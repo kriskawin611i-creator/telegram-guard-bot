@@ -149,17 +149,111 @@ BLOCK_ALL_GAMES          = parse_bool_env("BLOCK_ALL_GAMES", True)
 BLOCK_ALL_VIA_BOT        = parse_bool_env("BLOCK_ALL_VIA_BOT", True)
 BLOCK_ALL_PAID_MEDIA     = parse_bool_env("BLOCK_ALL_PAID_MEDIA", True)
 
-# ข้อความต้อนรับค่าเริ่มต้น (ปรับให้สุภาพและไม่ผูกกับปุ่มลิงก์ที่ถูกนำออก)
+# ข้อความต้อนรับค่าเริ่มต้น
 DEFAULT_WELCOME_TEXT = (
-    "ยินดีต้อนรับ {name} เข้าสู่กลุ่ม\n\n"
-    "กลุ่มนี้เข้าฟรี ไม่มีค่าใช้จ่าย ยินดีต้อนรับทุกคนครับ"
+    "✨ ยินดีต้อนรับทุกท่านสู่พื้นที่ความบันเทิง! 🎉\n\n"
+    "👋 ต้อนรับคุณ: {name}\n"
+    "🌟 สมาชิกใหม่รอบนี้: {count} คน\n\n"
+    "🔥 คัดมาให้แล้ว กลุ่มเด็ดในเครือครบทุกสาย!\n"
+    "💯 การันตีเข้าฟรีทุกกลุ่ม ไม่มีค่าใช้จ่ายใดๆ\n"
+    "👇 เลือกสายที่ชอบจากปุ่มด้านล่าง แล้วลุยเลย!"
 )
 
-# นำรายชื่อลิงก์กลุ่มทั้ง 58 กลุ่มออกตามคำขอ (สามารถเพิ่มใหม่ผ่าน Environment Variable: WELCOME_GROUP_LINKS ได้)
-DEFAULT_WELCOME_GROUP_LINKS: list[dict] = []
+# ลิงก์รูปภาพต้อนรับค่าเริ่มต้น (Cloudinary CDN - หมุนเวียนสลับ 5-6 รูปอัตโนมัติ)
+DEFAULT_WELCOME_IMAGES: list[str] = [
+    "https://res.cloudinary.com/u6yzvdyg/image/upload/v1794821596/image-gen-3_20261014-105001.png",
+    "https://res.cloudinary.com/u6yzvdyg/image/upload/v1794821596/%E0%B9%82%E0%B8%9B%E0%B8%AA%E0%B9%80%E0%B8%95%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%81%E0%B8%A5%E0%B8%B8%E0%B9%88%E0%B8%A1_Telegram_%E0%B8%AA%E0%B9%84%E0%B8%95%E0%B8%A5%E0%B9%8C%E0%B8%99%E0%B8%B5%E0%B8%AD%E0%B8%AD%E0%B8%99.png",
+    "https://res.cloudinary.com/u6yzvdyg/image/upload/v1794821596/%E0%B9%82%E0%B8%9B%E0%B8%AA%E0%B9%80%E0%B8%95%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%A7%E0%B8%99%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%81%E0%B8%A5%E0%B8%B8%E0%B9%88%E0%B8%A1_Telegram_%E0%B8%AA%E0%B8%B5%E0%B8%8A%E0%B8%A1%E0%B8%9E%E0%B8%B9%E0%B8%AA%E0%B8%94%E0%B9%83%E0%B8%AA-2.png",
+    "https://res.cloudinary.com/u6yzvdyg/image/upload/v1794821596/%E0%B9%82%E0%B8%9B%E0%B8%A3%E0%B9%82%E0%B8%A1%E0%B8%8A%E0%B8%B1%E0%B9%88%E0%B8%99%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%81%E0%B8%A5%E0%B8%B8%E0%B9%88%E0%B8%A1_Telegram_%E0%B8%A3%E0%B8%B4%E0%B8%A1%E0%B8%AA%E0%B8%A3%E0%B8%B0-3.png",
+    "https://res.cloudinary.com/u6yzvdyg/image/upload/v1794821595/%E0%B9%82%E0%B8%9B%E0%B8%A3%E0%B9%82%E0%B8%A1%E0%B8%95%E0%B8%81%E0%B8%A5%E0%B8%B8%E0%B9%88%E0%B8%A1_Telegram_%E0%B8%A3%E0%B8%B4%E0%B8%A1%E0%B8%AA%E0%B8%A3%E0%B8%B0%E0%B8%AA%E0%B8%B8%E0%B8%94%E0%B8%AA%E0%B8%94%E0%B9%83%E0%B8%AA-4.png",
+]
+
+def parse_welcome_images(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+    items = []
+    for part in re.split(r'[\r\n,;]+', raw_value):
+        cleaned = part.strip()
+        if cleaned.startswith("http://") or cleaned.startswith("https://"):
+            items.append(cleaned)
+    return items
+
+DEFAULT_WELCOME_GROUP_LINKS: list[dict] = [
+    # --- กลุ่มผู้หญิง (Female) ---
+    {"title": "กลุ่มดูดxี", "url": "https://t.me/doodmheev1", "chat_id": -1004371195122, "sex": "Female"},
+    {"title": "คนคลั่งxี", "url": "https://t.me/klangheev1", "chat_id": -1004375248238, "sex": "Female"},
+    {"title": "จุดกางแตด", "url": "https://t.me/judkangtadd", "chat_id": -1004375050476, "sex": "Female"},
+    {"title": "แจกวาร์ป งาน แรร์ ทาง บ้าน", "url": "https://t.me/clipfreex", "chat_id": -1002035635578, "sex": "Female"},
+    {"title": "ช่องส่องหมี", "url": "https://t.me/shongmhee", "chat_id": -1001880394930, "sex": "Female"},
+    {"title": "ถ้ำหมี", "url": "https://t.me/+WeYXLsfg24c5YmVl", "chat_id": -1003865858642, "sex": "Female"},
+    {"title": "ถ้ำxีระเบิด", "url": "https://t.me/+VdnlHkxPUkAzYjU1", "chat_id": -1003990789699, "sex": "Female"},
+    {"title": "รวมพลคนบ้าxี", "url": "https://t.me/baheev1", "chat_id": -1004362852597, "sex": "Female"},
+    {"title": "ส่องหมี", "url": "https://t.me/shongmheeav", "chat_id": -1003854594118, "sex": "Female"},
+    {"title": "หนังชมพูพาวทัวร์", "url": "https://t.me/+uSukf44DUmJiMTA1", "chat_id": -1004361620745, "sex": "Female"},
+    {"title": "av นานาชาติ", "url": "https://t.me/avshongmhee", "chat_id": -1003771094654, "sex": "Female"},
+    {"title": "xีพาหลอน", "url": "https://t.me/+o3i__Vseq_BmZTQ1", "chat_id": -1004451470486, "sex": "Female"},
+    {"title": "xีฟรีมีให้ดู", "url": "https://t.me/+ekNGZZ0jxiY5MTY1", "chat_id": -1004445162475, "sex": "Female"},
+    {"title": "หลวงพ่อโต V3", "url": "https://t.me/+ygBNsfWZhrszOWQ9", "chat_id": -1003750183920, "sex": "Female"},
+    {"title": "หลวงพ่อโต V2", "url": "https://t.me/+FJreLFsYRGczYWE9", "chat_id": -1003964195315, "sex": "Female"},
+    {"title": "หลวงพ่อโต V1", "url": "https://t.me/+UKpA_MFYjeYxYWU1", "chat_id": -1003964261161, "sex": "Female"},
+    {"title": "อัศวินโต๊ะกลม", "url": "https://t.me/+YhaQ5nEkDe1mOWE1", "chat_id": -1004347482362, "sex": "Female"},
+    {"title": "อัศวินโต้ะส้ม", "url": "https://t.me/+JJHSILN2jPJlZjY1", "chat_id": -1004354431499, "sex": "Female"},
+    {"title": "อัศวินโต๊ะหมี", "url": "https://t.me/+aHZjKajBxlJkNTY1", "chat_id": -1004343764829, "sex": "Female"},
+    {"title": "รักษาxี", "url": "https://t.me/+IkpgFxolriU0ZTM1", "chat_id": -1004303453836, "sex": "Female"},
+    {"title": "ศาลาพักควx", "url": "https://t.me/+X5vxtODrQSM2Yjk1", "chat_id": -1004448563805, "sex": "Female"},
+    {"title": "คลิปหรรษา", "url": "https://t.me/+8ST4DjJ4_lRiYTQ1", "chat_id": -1004458793062, "sex": "Female"},
+    {"title": "ควxเพื่อนxี", "url": "https://t.me/+OaY34hglMbZkZDE1", "chat_id": -1004450739951, "sex": "Female"},
+    {"title": "กลิ่นดีที่xี", "url": "https://t.me/+kyWiidOVNpUwMzM1", "chat_id": -1004304758102, "sex": "Female"},
+    {"title": "xีดีที่นี้", "url": "https://t.me/+8Wn_BZ2vBso4YmY9", "chat_id": -1004296876048, "sex": "Female"},
+    {"title": "เขื่อนจะแตก", "url": "https://t.me/+9nE4WdvB6FkyNjU1", "chat_id": -1003979538788, "sex": "Female"},
+    {"title": "ช่วงเวลาวัยหนุ่ม", "url": "https://t.me/+l1791fWv_ZgwZDdl", "chat_id": -1003913348963, "sex": "Female"},
+    {"title": "ดoนxีบิน", "url": "https://t.me/+t9fiV42gGXVkMDU1", "chat_id": -1004272453579, "sex": "Female"},
+    {"title": "นักล่าxี", "url": "https://t.me/+6-9URc7-fGxiZGY1", "chat_id": -1003957812190, "sex": "Female"},
+    {"title": "วาร์ปxีรีเทิร์น", "url": "https://t.me/+c0BvcQliwLg1ODY1", "chat_id": -1004291436088, "sex": "Female"},
+    {"title": "เหนียวมือครับ", "url": "https://t.me/+tx0yOG32-MVmNzFl", "chat_id": -1004499308589, "sex": "Female"},
+    {"title": "ทิชชู่หมดม้วน", "url": "https://t.me/+5UL4fiTEalYyZjg1", "chat_id": -1003979381617, "sex": "Female"},
+    {"title": "ราตรีนี้มีวาร์ป", "url": "https://t.me/+fbFoUa7rya4yNDk1", "chat_id": -1004298274076, "sex": "Female"},
+    {"title": "ตาค้างยันหว่าง", "url": "https://t.me/+CnTECVkSUrM1NzVl", "chat_id": -1004423991150, "sex": "Female"},
+    {"title": "ถ้ำนี้หมีดุ", "url": "https://t.me/+OxFEmH9dibk2Mzk1", "chat_id": -1004414997183, "sex": "Female"},
+    {"title": "ซอยตันมันหยด", "url": "https://t.me/+rOvgV2YYqpQ4NzU1", "chat_id": -1004363237865, "sex": "Female"},
+    {"title": "ทีเด็ดแดนลับ", "url": "https://t.me/+a6SWU4_21EJhYjU1", "chat_id": -1004363883271, "sex": "Female"},
+    {"title": "ผีอำจนเตียงสั่น", "url": "https://t.me/+cfajjE7u7l42MDY1", "chat_id": -1003911470527, "sex": "Female"},
+    {"title": "เล่นผีผ้าห่ม", "url": "https://t.me/+8Fvliv6TyUEwZDU1", "chat_id": -1003737652780, "sex": "Female"},
+    {"title": "ปราบผีอาหวัง", "url": "https://t.me/+aMxsA4fOq6RhYWE1", "chat_id": -1004418279680, "sex": "Female"},
+    {"title": "คลิปตลกเบาสมอง", "url": "https://t.me/+45fGwZHF4PJhMWY1", "chat_id": -1004379471744, "sex": "Female"},
+    {"title": "Dooballvip24", "url": "https://t.me/+V9QSI8WNxLZhY2M1", "chat_id": -1004350098344, "sex": "Female"},
+
+    # --- กลุ่มผู้ชาย (Male) ---
+    {"title": "โหนกระดอ", "url": "https://t.me/+Tirl3g9R0ZoxMjll", "chat_id": -1003732267246, "sex": "Male"},
+    {"title": "ซดน้ำกาม", "url": "https://t.me/Sodnamkam", "chat_id": -1003896586263, "sex": "Male"},
+    {"title": "ผู้หล่อบอกต่อด้วย", "url": "https://t.me/+6NTwQa3tBSNmZDNl", "chat_id": -1004436318702, "sex": "Male"},
+    {"title": "เกย์นัว", "url": "https://t.me/+-yTwB68YcCpjZjA1", "chat_id": -1004414579757, "sex": "Male"},
+    {"title": "เกย์ตัวตึง", "url": "https://t.me/+wy4F-MnoMyc4NjQ1", "chat_id": -1003944373391, "sex": "Male"},
+    {"title": "แซ่บลืมผัว", "url": "https://t.me/+bo8mOfm4lSQyYjJl", "chat_id": -1004269071183, "sex": "Male"},
+    {"title": "เกย์นัวทั่วไทย", "url": "https://t.me/+wXzRItHRxKlhNTg1", "chat_id": -1004480688488, "sex": "Male"},
+    {"title": "หิวผู้จนตาลาย", "url": "https://t.me/+V-mrzgNjJsE2ODA9", "chat_id": -1003943751968, "sex": "Male"},
+    {"title": "กล้วยหอม", "url": "https://t.me/+knxqhpUXNAIxN2Rl", "chat_id": -1003882571475, "sex": "Male"},
+    {"title": "ผู้ชายขายน้ำ", "url": "https://t.me/+5KbHhpjj0Lc5ZThl", "chat_id": -1003994940584, "sex": "Male"},
+    {"title": "แซ่บไม่ไหว", "url": "https://t.me/+hLWitwnUT65jMGZl", "chat_id": -1004347432718, "sex": "Male"},
+    {"title": "คลังสาวแซ่บ", "url": "https://t.me/+VrLqO6bWm5k0YzBl", "chat_id": -1004324481876, "sex": "Male"},
+    {"title": "แซ่บตัวแม่", "url": "https://t.me/+ZAvXzFFAXZ8xZDY1", "chat_id": -1004494015250, "sex": "Male"},
+    {"title": "แซ่บไม่พัก", "url": "https://t.me/+NXYafR0HFVtiNmY1", "chat_id": -1004445151646, "sex": "Male"},
+    {"title": "สาวขี้อ้อน", "url": "https://t.me/+JovwmGEeHyMwYThl", "chat_id": -1003663690684, "sex": "Male"},
+    {"title": "OnlyFansX", "url": "https://t.me/+gsjw-bZcxJYxNzNl", "chat_id": -1004411326095, "sex": "Male"},
+    {"title": "แอบแซ่บ", "url": "https://t.me/+g3rdpd5JyAI4MTM1", "chat_id": -1004430170651, "sex": "Male"},
+    {"title": "ห้องลับสาวแซ่บ", "url": "https://t.me/+rcFCXvIO8KliZGI9", "chat_id": -1004348635742, "sex": "Male"},
+    {"title": "นางฟ้าพาติดเรท", "url": "https://t.me/+D2zAGjCW7Cc0ZGFl", "chat_id": -1004392387293, "sex": "Male"},
+    {"title": "JAVxTH", "url": "https://t.me/+ESNH7vOyokk4YWQ1", "chat_id": -1003458434322, "sex": "Male"},
+    {"title": "ดูซีรีส์กัน", "url": "https://t.me/+I1q23AUv24dhMWM1", "chat_id": -1004459446053, "sex": "Male"},
+    {"title": "ละครแนวตั้ง", "url": "https://t.me/+Nu-MChv-hlpiMGZl", "chat_id": -1004313946578, "sex": "Male"},
+    {"title": "ซีรีส์ฟิน", "url": "https://t.me/+HgRm1A1SyuVhNDY1", "chat_id": -1004298273520, "sex": "Male"},
+    {"title": "ติดละครสั้น", "url": "https://t.me/+8lkVLMI9ELM2Y2Zl", "chat_id": -1004406516433, "sex": "Male"},
+    {"title": "Doball24HR", "url": "https://t.me/+rHrHLeTRtk43MTA1", "chat_id": -1003949103951, "sex": "Male"},
+    {"title": "ดูบอลสด4K", "url": "https://t.me/+M8q8ZMrKmeY5YWY1", "chat_id": -1004308599662, "sex": "Male"},
+]
 
 WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
-WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 4))
+WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 6))
 WELCOME_BUTTONS_PER_ROW = max(1, parse_int_env("WELCOME_BUTTONS_PER_ROW", 2))
 WELCOME_BATCH_SECONDS   = max(1, parse_int_env("WELCOME_BATCH_SECONDS", 60))
 WELCOME_SEND_TIMEOUT    = max(1, parse_int_env("WELCOME_SEND_TIMEOUT", 5))
@@ -168,6 +262,7 @@ WELCOME_IDLE_WAIT       = max(1, parse_int_env("WELCOME_IDLE_WAIT", 10))
 WELCOME_SEND_INTERVAL   = max(0, parse_int_env("WELCOME_SEND_INTERVAL_MS", 1000)) / 1000
 WELCOME_TEXT            = os.getenv("WELCOME_TEXT", DEFAULT_WELCOME_TEXT).replace("\\n", "\n")
 WELCOME_GROUP_LINKS     = parse_welcome_group_links(os.getenv("WELCOME_GROUP_LINKS")) or DEFAULT_WELCOME_GROUP_LINKS
+WELCOME_IMAGES          = parse_welcome_images(os.getenv("WELCOME_IMAGE_URLS") or os.getenv("WELCOME_IMAGE_URL")) or DEFAULT_WELCOME_IMAGES
 
 CRITICAL_API_RETRIES    = max(0, parse_int_env("CRITICAL_API_RETRIES", 2))
 CRITICAL_RETRY_MAX_WAIT = max(1, parse_int_env("CRITICAL_RETRY_MAX_WAIT", 30))
@@ -329,6 +424,16 @@ async def run_critical_action(label: str, operation, retries: int | None = None)
 
             logger.warning(f"{label} rate limited; retrying in {delay:.1f}s")
             await asyncio.sleep(delay + 0.1)
+        except BadRequest as e:
+            # In PTB, BadRequest is a subclass of NetworkError.
+            # We must catch BadRequest before NetworkError so Telegram 400 errors
+            # (like message already deleted) are not mistaken for network glitches and retried.
+            err_text = str(e).lower()
+            if "message to delete not found" in err_text or "message can't be deleted" in err_text:
+                logger.info(f"{label}: message already deleted or not found: {e}")
+                return True, None
+            logger.warning(f"{label} bad request (will not retry): {e}")
+            break
         except (TimedOut, NetworkError) as e:
             if attempt >= max_retries:
                 logger.error(f"{label} failed after network retries: {e}")
@@ -439,35 +544,39 @@ async def purge_user_messages(context, chat_id: int, user_id: int,
     deleted  = 0
     failed_ids: set[int] = set()
 
-    # ลบทีละชุด 100 ตัว (delete_messages = bulk API ของ Telegram)
+    bulk_delete_fn = getattr(context.bot, "delete_messages", None)
+    has_bulk = callable(bulk_delete_fn)
+
+    # ลบทีละชุด 100 ตัว (delete_messages = bulk API ของ Telegram ถ้ามีในไลบรารี)
     for i in range(0, len(ids_list), 100):
         chunk = ids_list[i:i + 100]
-        ok, _ = await run_critical_action(
-            f"bulk delete chat={chat_id} user={user_id}",
-            lambda chunk=chunk: context.bot.delete_messages(
-                chat_id=chat_id,
-                message_ids=chunk,
-            ),
-        )
-        if ok:
-            deleted += len(chunk)
-        else:
-            # fallback: ลบทีละข้อความ (เผื่อ PTB เก่าไม่มี delete_messages
-            # หรือบางข้อความเกิน 48 ชม. / ลบไปแล้ว)
+        if has_bulk:
+            ok, _ = await run_critical_action(
+                f"bulk delete chat={chat_id} user={user_id}",
+                lambda chunk=chunk: bulk_delete_fn(
+                    chat_id=chat_id,
+                    message_ids=chunk,
+                ),
+            )
+            if ok:
+                deleted += len(chunk)
+                continue
             logger.warning(f"bulk delete failed in chat {chat_id} — fallback per-message")
-            for mid in chunk:
-                single_ok, _ = await run_critical_action(
-                    f"delete message={mid} chat={chat_id}",
-                    lambda mid=mid: context.bot.delete_message(
-                        chat_id=chat_id,
-                        message_id=mid,
-                    ),
-                    retries=1,
-                )
-                if single_ok:
-                    deleted += 1
-                else:
-                    failed_ids.add(mid)
+
+        # fallback: ลบทีละข้อความ (สำหรับ PTB เก่า หรือกรณี bulk delete ไม่สำเร็จ)
+        for mid in chunk:
+            single_ok, _ = await run_critical_action(
+                f"delete message={mid} chat={chat_id}",
+                lambda mid=mid: context.bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=mid,
+                ),
+                retries=1,
+            )
+            if single_ok:
+                deleted += 1
+            else:
+                failed_ids.add(mid)
 
     # Keep failed IDs for a later /purge instead of losing them before the API
     # confirms deletion. Entries without an original timestamp get "now".
@@ -600,68 +709,71 @@ def welcome_member_names(members) -> str:
 def build_welcome_text(members) -> str:
     template = WELCOME_TEXT or DEFAULT_WELCOME_TEXT
     safe_template = html.escape(template)
-    return safe_template.replace("{name}", welcome_member_names(members))
+    names_str = welcome_member_names(members)
+    count_str = str(len(members)) if members else "1"
+    return safe_template.replace("{name}", names_str).replace("{count}", count_str)
+
+WELCOME_FEMALE_ICONS = ["🌸", "💋", "🍑", "💖", "🎀", "🍓", "💃", "🍒"]
+WELCOME_MALE_ICONS   = ["⚡", "🔥", "👑", "🚀", "🎯", "💥", "💪", "🥊"]
 
 def build_welcome_keyboard(chat_id: int) -> InlineKeyboardMarkup | None:
     if not WELCOME_GROUP_LINKS:
         return None
 
-    grouped_links: dict[tuple[str, object], list[dict]] = defaultdict(list)
+    female_pool: list[dict] = []
+    male_pool: list[dict] = []
+    other_pool: list[dict] = []
+
     for item in WELCOME_GROUP_LINKS:
         item_chat_id = item.get("chat_id")
         if item_chat_id is not None and item_chat_id == chat_id:
             continue
 
-        identity = (
-            ("chat_id", item_chat_id)
-            if item_chat_id is not None
-            else ("url", item.get("url"))
-        )
-        grouped_links[identity].append(item)
+        sex = str(item.get("sex") or "").lower()
+        if sex == "female":
+            female_pool.append(item)
+        elif sex == "male":
+            male_pool.append(item)
+        else:
+            other_pool.append(item)
 
-    available_links = [random.choice(items) for items in grouped_links.values()]
-    if not available_links:
+    if not female_pool and not male_pool and not other_pool:
         return None
 
-    count = min(WELCOME_BUTTON_COUNT, len(available_links))
-    pools = {
-        "Female": [
-            item for item in available_links
-            if str(item.get("sex") or "").lower() == "female"
-        ],
-        "Male": [
-            item for item in available_links
-            if str(item.get("sex") or "").lower() == "male"
-        ],
-    }
-    uncategorized = [
-        item for item in available_links
-        if str(item.get("sex") or "").lower() not in {"female", "male"}
-    ]
+    random.shuffle(female_pool)
+    random.shuffle(male_pool)
+    random.shuffle(other_pool)
 
-    for pool in (*pools.values(), uncategorized):
-        random.shuffle(pool)
+    f_icons = list(WELCOME_FEMALE_ICONS)
+    m_icons = list(WELCOME_MALE_ICONS)
+    random.shuffle(f_icons)
+    random.shuffle(m_icons)
 
-    first_sex = random.choice(("Female", "Male"))
-    second_sex = "Male" if first_sex == "Female" else "Female"
-    selected_links: list[dict] = []
+    # 2 ปุ่มต่อแถว: ฝั่งซ้ายกลุ่มหญิง | ฝั่งขวากลุ่มชาย (อิโมจิไม่ซ้ำกันทั้ง 6 ปุ่ม)
+    num_rows = max(1, WELCOME_BUTTON_COUNT // 2)
+    rows: list[list[InlineKeyboardButton]] = []
 
-    for index in range(count):
-        desired_sex = first_sex if index % 2 == 0 else second_sex
-        fallback_sex = second_sex if desired_sex == first_sex else first_sex
-        for pool in (pools[desired_sex], pools[fallback_sex], uncategorized):
-            if pool:
-                selected_links.append(pool.pop())
-                break
+    for _ in range(num_rows):
+        row: list[InlineKeyboardButton] = []
 
-    rows = []
+        # ซ้าย: กลุ่มหญิง
+        f_item = female_pool.pop() if female_pool else (other_pool.pop() if other_pool else None)
+        if f_item:
+            title = f_item.get("title", "กลุ่มหญิง")
+            icon = f_icons.pop() if f_icons else "🌸"
+            btn_title = f"{icon} {title}"
+            row.append(InlineKeyboardButton(btn_title, url=f_item["url"]))
 
-    for index in range(0, len(selected_links), WELCOME_BUTTONS_PER_ROW):
-        row = [
-            InlineKeyboardButton(item["title"], url=item["url"])
-            for item in selected_links[index:index + WELCOME_BUTTONS_PER_ROW]
-        ]
-        rows.append(row)
+        # ขวา: กลุ่มชาย
+        m_item = male_pool.pop() if male_pool else (other_pool.pop() if other_pool else None)
+        if m_item:
+            title = m_item.get("title", "กลุ่มชาย")
+            icon = m_icons.pop() if m_icons else "⚡"
+            btn_title = f"{icon} {title}"
+            row.append(InlineKeyboardButton(btn_title, url=m_item["url"]))
+
+        if row:
+            rows.append(row)
 
     return InlineKeyboardMarkup(rows) if rows else None
 
@@ -701,32 +813,75 @@ async def wait_for_welcome_batch(application) -> bool:
 
         await asyncio.sleep(min(1.0, remaining))
 
+_welcome_image_idx = 0
+_welcome_image_lock: asyncio.Lock | None = None
+
+async def get_next_welcome_image() -> str | None:
+    global _welcome_image_idx, _welcome_image_lock
+    if not WELCOME_IMAGES:
+        return None
+    if _welcome_image_lock is None:
+        _welcome_image_lock = asyncio.Lock()
+    async with _welcome_image_lock:
+        img = WELCOME_IMAGES[_welcome_image_idx % len(WELCOME_IMAGES)]
+        _welcome_image_idx = (_welcome_image_idx + 1) % len(WELCOME_IMAGES)
+        return img
+
 async def send_welcome_message(bot, chat_id: int, thread_id: int | None, members) -> bool:
-    send_kwargs = {
-        "chat_id": chat_id,
-        "text": build_welcome_text(members),
-        "parse_mode": "HTML",
-        "reply_markup": build_welcome_keyboard(chat_id),
-        "disable_web_page_preview": True,
-    }
+    photo_url = await get_next_welcome_image()
+    welcome_text = build_welcome_text(members)
+    reply_markup = build_welcome_keyboard(chat_id)
 
-    if thread_id:
-        send_kwargs["message_thread_id"] = thread_id
+    sent_message = None
 
-    try:
-        sent_message = await asyncio.wait_for(
-            bot.send_message(**send_kwargs),
-            timeout=WELCOME_SEND_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            f"Skipped welcome in chat {chat_id}: send exceeded "
-            f"{WELCOME_SEND_TIMEOUT}s"
-        )
-        return False
-    except Exception as e:
-        logger.warning(f"Failed to send welcome in chat {chat_id}: {e}")
-        return False
+    # ส่งแบบรูปภาพพร้อมแคปชันและปุ่ม ถ้ามีรูปภาพตั้งค่าไว้
+    if photo_url:
+        send_kwargs = {
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "caption": welcome_text,
+            "parse_mode": "HTML",
+            "reply_markup": reply_markup,
+        }
+        if thread_id:
+            send_kwargs["message_thread_id"] = thread_id
+
+        try:
+            sent_message = await asyncio.wait_for(
+                bot.send_photo(**send_kwargs),
+                timeout=WELCOME_SEND_TIMEOUT,
+            )
+        except Exception as e:
+            logger.warning(
+                f"send_photo failed in chat {chat_id} ({e}); falling back to send_message"
+            )
+
+    # ส่งแบบข้อความธรรมดา (กรณีไม่มีรูปภาพ หรือส่งรูปภาพไม่สำเร็จ)
+    if sent_message is None:
+        send_kwargs = {
+            "chat_id": chat_id,
+            "text": welcome_text,
+            "parse_mode": "HTML",
+            "reply_markup": reply_markup,
+            "disable_web_page_preview": True,
+        }
+        if thread_id:
+            send_kwargs["message_thread_id"] = thread_id
+
+        try:
+            sent_message = await asyncio.wait_for(
+                bot.send_message(**send_kwargs),
+                timeout=WELCOME_SEND_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Skipped welcome in chat {chat_id}: send exceeded "
+                f"{WELCOME_SEND_TIMEOUT}s"
+            )
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to send welcome in chat {chat_id}: {e}")
+            return False
 
     old_message_ids = set(stale_welcome_messages.pop(chat_id, set()))
     old_message_id = last_welcome_messages.get(chat_id)
@@ -1821,6 +1976,15 @@ async def _process_message(message, user, chat_id: int, context):
                 f"delete violation chat={chat_id} user={user.id}",
                 retries=0,
             )
+
+            # นำข้อความที่เพิ่งลบสำเร็จออกจาก log ทันที เพื่อไม่ให้ purge_user_messages พยายามลบซ้ำ
+            if deleted:
+                log_key = (chat_id, user.id)
+                if log_key in user_message_log:
+                    user_message_log[log_key] = [
+                        e for e in user_message_log[log_key] if e[0] != message.message_id
+                    ]
+
             action = await mute_permanent()
             if not deleted:
                 action += " (ลบข้อความต้นเหตุไม่สำเร็จ)"
