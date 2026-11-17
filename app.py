@@ -981,26 +981,27 @@ async def run_welcome_queue(application, bot, chat_id: int) -> None:
             )
 
 def queue_welcome_message(message, chat, members, context) -> None:
-    if not WELCOME_ENABLED:
+    if not WELCOME_ENABLED or not chat:
         return
 
+    chat_id = chat.id
     human_members = [member for member in members if not getattr(member, "is_bot", False)]
     if not human_members:
         return
 
     for member in human_members:
-        pending_welcome_members[chat.id][member.id] = member
+        pending_welcome_members[chat_id][member.id] = member
 
-    thread_id = getattr(message, "message_thread_id", None)
+    thread_id = getattr(message, "message_thread_id", None) if message else None
     if thread_id:
-        pending_welcome_threads[chat.id] = thread_id
+        pending_welcome_threads[chat_id] = thread_id
 
-    task = welcome_tasks.get(chat.id)
+    task = welcome_tasks.get(chat_id)
     if task and not task.done():
         return
 
-    welcome_tasks[chat.id] = context.application.create_task(
-        run_welcome_queue(context.application, context.bot, chat.id),
+    welcome_tasks[chat_id] = context.application.create_task(
+        run_welcome_queue(context.application, context.bot, chat_id),
         name=f"welcome-{chat_id}",
     )
 
@@ -1640,15 +1641,28 @@ async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     mark_update_seen()
 
-    chat_id = update.effective_chat.id
-    user_id = update.chat_member.new_chat_member.user.id
+    chat = update.effective_chat
+    if not chat or not update.chat_member or not update.chat_member.new_chat_member:
+        return
+
+    chat_id = chat.id
+    new_member = update.chat_member.new_chat_member
+    user = getattr(new_member, "user", None)
+    if not user:
+        return
+    user_id = user.id
 
     # Promotion/demotion/member changes invalidate any cached admin result.
     admin_cache.pop((chat_id, user_id), None)
 
-    if update.chat_member.new_chat_member.status == "member":
+    old_status = getattr(update.chat_member.old_chat_member, "status", None)
+    new_status = new_member.status
+
+    if new_status == "member" and old_status in ("left", "kicked", "restricted", None):
         join_times[user_key(chat_id, user_id)] = time.time()
         cleanup_join_times()
+        if not getattr(user, "is_bot", False):
+            queue_welcome_message(None, chat, [user], context)
 
 
 async def _handle_new_members_impl(update: Update, context: ContextTypes.DEFAULT_TYPE):
