@@ -124,17 +124,15 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT  = parse_int_env("PORT", 10000)
 
 # Optional production guards:
-# ALLOWED_CHAT_IDS="-100111,-100222"  -> bot only works in these groups
+# ALLOWED_CHAT_IDS="-100111,-100222"  -> bot only works in these groups (auto-merged with 72 default groups)
 # ALLOWED_SENDER_CHAT_IDS="-100111,-100222" -> trusted groups/channels may post as sender_chat
 # LEAVE_UNAUTHORIZED_CHATS=true       -> bot leaves groups not in the allowlist
 # DROP_PENDING_UPDATES=false          -> process Telegram backlog on restart
-ALLOWED_CHAT_IDS          = parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS"))
-ALLOWED_SENDER_CHAT_IDS   = parse_chat_ids(os.getenv("ALLOWED_SENDER_CHAT_IDS"))
 OWNER_USER_IDS           = parse_chat_ids(os.getenv("OWNER_USER_IDS"))
 ALLOWED_BOT_USERNAMES    = parse_usernames(os.getenv("ALLOWED_BOT_USERNAMES"))
-LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", False)
+LEAVE_UNAUTHORIZED_CHATS = parse_bool_env("LEAVE_UNAUTHORIZED_CHATS", True)
 DROP_PENDING_UPDATES     = parse_bool_env("DROP_PENDING_UPDATES", False)
-ALLOWED_UPDATE_TYPES     = ["message", "edited_message", "chat_member"]
+ALLOWED_UPDATE_TYPES     = ["message", "edited_message", "chat_member", "my_chat_member"]
 
 # ========================================================
 # [COMPREHENSIVE ANTI-SPAM GUARDS] นโยบายป้องกันสแปมแบบครบวงจร
@@ -151,12 +149,12 @@ BLOCK_ALL_PAID_MEDIA     = parse_bool_env("BLOCK_ALL_PAID_MEDIA", True)
 
 # ข้อความต้อนรับค่าเริ่มต้น
 DEFAULT_WELCOME_TEXT = (
-    "✨ ยินดีต้อนรับทุกท่านสู่พื้นที่ความบันเทิง! 🎉\n\n"
+    "✨ ยินดีต้อนรับสู่พื้นที่ความเสียว! 🎉\n\n"
     "👋 ต้อนรับคุณ: {name}\n"
     "🌟 สมาชิกใหม่รอบนี้: {count} คน\n\n"
-    "🔥 คัดมาให้แล้ว กลุ่มเด็ดในเครือครบทุกสาย!\n"
-    "💯 การันตีเข้าฟรีทุกกลุ่ม ไม่มีค่าใช้จ่ายใดๆ\n"
-    "👇 เลือกสายที่ชอบจากปุ่มด้านล่าง แล้วลุยเลย!"
+    "🔥 คัดมาให้แล้ว กลุ่มเด็ดในเครือครบ!\n"
+    "💯 การันตีเข้าฟรีทุกกลุ่ม ไม่มีค่าใช้จ่าย\n"
+    "👇 เลือกสายที่ชอบจากปุ่มด้านล่าง 👇"
 )
 
 # ลิงก์รูปภาพต้อนรับค่าเริ่มต้น (Cloudinary CDN - หมุนเวียนสลับ 5-6 รูปอัตโนมัติ)
@@ -250,7 +248,33 @@ DEFAULT_WELCOME_GROUP_LINKS: list[dict] = [
     {"title": "ติดละครสั้น", "url": "https://t.me/+8lkVLMI9ELM2Y2Zl", "chat_id": -1004406516433, "sex": "Male"},
     {"title": "Doball24HR", "url": "https://t.me/+rHrHLeTRtk43MTA1", "chat_id": -1003949103951, "sex": "Male"},
     {"title": "ดูบอลสด4K", "url": "https://t.me/+M8q8ZMrKmeY5YWY1", "chat_id": -1004308599662, "sex": "Male"},
+    {"title": "ห้องแชท JAVx", "url": "https://t.me/+gwebllslUF1kNGI1", "chat_id": -1004441753507, "sex": "Male"},
+    {"title": "แก๊งกระดอซิ่ง", "url": "https://t.me/+843j4VNEIRBkMDc1", "chat_id": -1004383810346, "sex": "Male"},
+    {"title": "ชุมชนคนปั่นสล็อต", "url": "https://t.me/+J3QGas474qxjODll", "chat_id": -1004350844992, "sex": "Male"},
+    {"title": "ปั่นสล็อตดีกว่า", "url": "https://t.me/+8JPa2-asrE9hODZl", "chat_id": -1004419058541, "sex": "Male"},
 ]
+
+# รายชื่อ Chat ID เริ่มต้นที่อนุญาต (ดึงอัตโนมัติจากรายชื่อกลุ่มต้อนรับทั้ง 72 กลุ่มในเครือ)
+DEFAULT_ALLOWED_CHAT_IDS: set[int] = {
+    item["chat_id"]
+    for item in DEFAULT_WELCOME_GROUP_LINKS
+    if item.get("chat_id") is not None
+}
+
+# รวม Chat ID ที่ฝังในโค้ด และ Chat ID จาก Environment Variable บน Render (ถ้ามี) เข้าด้วยกัน
+_env_allowed_chats = parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS"))
+ALLOWED_CHAT_IDS = (
+    (DEFAULT_ALLOWED_CHAT_IDS | _env_allowed_chats)
+    if _env_allowed_chats
+    else DEFAULT_ALLOWED_CHAT_IDS
+)
+
+_env_allowed_sender_chats = parse_chat_ids(os.getenv("ALLOWED_SENDER_CHAT_IDS"))
+ALLOWED_SENDER_CHAT_IDS = (
+    (DEFAULT_ALLOWED_CHAT_IDS | _env_allowed_sender_chats)
+    if _env_allowed_sender_chats
+    else DEFAULT_ALLOWED_CHAT_IDS
+)
 
 WELCOME_ENABLED         = parse_bool_env("WELCOME_ENABLED", True)
 WELCOME_BUTTON_COUNT    = max(1, parse_int_env("WELCOME_BUTTON_COUNT", 6))
@@ -1636,6 +1660,13 @@ def cleanup_join_times() -> None:
     for uid in expired:
         join_times.pop(uid, None)
 
+async def track_bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ตรวจสอบทันทีเมื่อบอทถูกดึงเข้ากลุ่มหรือ Channel ใหม่ หากไม่อนุญาตจะออกจากห้องทันที"""
+    if update.my_chat_member and update.my_chat_member.new_chat_member:
+        new_status = update.my_chat_member.new_chat_member.status
+        if new_status in ("member", "administrator"):
+            await guard_allowed_chat(update, context)
+
 async def track_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await guard_allowed_chat(update, context):
         return
@@ -2293,6 +2324,7 @@ if __name__ == "__main__":
         .build()
     )
 
+    application.add_handler(ChatMemberHandler(track_bot_status, ChatMemberHandler.MY_CHAT_MEMBER))
     application.add_handler(ChatMemberHandler(track_join, ChatMemberHandler.CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     application.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_message))
